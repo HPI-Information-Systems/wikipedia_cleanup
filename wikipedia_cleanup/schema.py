@@ -1,33 +1,31 @@
-from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, Optional, Sequence
 
+from pydantic import BaseModel
 
-@dataclass(frozen=True)
-class InfoboxProperty:
-    propertyType: str
+
+class InfoboxProperty(BaseModel):
+    propertyType: Optional[str]
     name: str
 
 
-@dataclass(frozen=True)
-class InfoboxChange:
+class InfoboxChange(BaseModel):
     property: InfoboxProperty
-    valueValidTo: Optional[str] = None
+    valueValidTo: Optional[datetime] = None
     currentValue: Optional[str] = None
     previousValue: Optional[str] = None
 
 
-@dataclass(frozen=True)
-class User:
-    username: str
-    id: int
+class User(BaseModel):
+    username: Optional[str]
+    id: Optional[int]
 
 
-@dataclass(frozen=True)
-class InfoboxRevision:
+class InfoboxRevision(BaseModel):
     revisionId: int
     pageTitle: str
     changes: Sequence[InfoboxChange]
-    validFrom: str
+    validFrom: datetime
     attributes: Optional[Dict[str, str]]
     pageID: int
     revisionType: Optional[str]
@@ -35,10 +33,9 @@ class InfoboxRevision:
     template: Optional[str] = None
     position: Optional[int] = None
     user: Optional[User] = None
-    validTo: Optional[str] = None
+    validTo: Optional[datetime] = None
 
 
-@dataclass(frozen=True)
-class InfoboxRevisionHistory:
+class InfoboxRevisionHistory(BaseModel):
     key: str
     revisions: Sequence[InfoboxRevision]
