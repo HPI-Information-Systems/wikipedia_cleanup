@@ -8,6 +8,10 @@ authors = ["fabianhe <39628987+fabianhe@users.noreply.github.com>"]
 python = "3.6.9"
 pandas = "^1.0.0"
 numpy = "^1.19.5"
+tqdm = "^4.62.3"
+matplotlib = "3.3.4"
+libarchive = "^0.4.7"
+python-Levenshtein = "^0.12.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
