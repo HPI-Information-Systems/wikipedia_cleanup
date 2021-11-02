@@ -37,7 +37,7 @@ jobs:
           echo "$HOME/.poetry/bin" >> $GITHUB_PATH
       - name: Set up pre-commit cache
         if: startsWith(runner.os, 'Linux')
-        run: apt install libarchive-dev -y
+        run: sudo apt install libarchive-dev -y
       - name: Install dependencies
         run: poetry install --no-interaction
       - name: Run pre-commit hooks
