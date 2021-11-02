@@ -3,6 +3,10 @@
 personal-knowledge.txt
 garbage
 
+.vscode
+.DS_Store
+matched-infoboxes-extracted
+data
 
 
 # Created by .ignore support plugin (hsz.mobi)
