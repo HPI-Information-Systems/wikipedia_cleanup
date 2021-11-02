@@ -3,6 +3,12 @@ from typing import Dict, Optional, Sequence
 
 from pydantic import BaseModel
 
+# Knowledge over json-files:
+# Each file consists of the revisions / changes of one or more pages.
+# All revisions of a page are in one file.
+# Since a page can have multiple infoboxes, one json-file
+# can contain all changes of multiple infoboxes.
+
 
 class InfoboxProperty(BaseModel):
     propertyType: Optional[str]  # attribute, meta
@@ -31,7 +37,7 @@ class InfoboxRevision(BaseModel):
         Dict[str, str]
     ]  # snapshot after revision of all properties to value mappings
     pageID: int  # wikipedia pageID: Page key but no infobox id
-    revisionType: Optional[str]  # "CREATE", probably: "DELETE" ""
+    revisionType: Optional[str]  # "CREATE", probably: "DELETE", "UPDATE"
     key: str  # infobox-key, unrelated to PageID and revisionId
     template: Optional[
         str
