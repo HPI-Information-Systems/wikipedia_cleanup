@@ -3,9 +3,15 @@ from typing import Dict, Optional, Sequence
 
 from pydantic import BaseModel
 
+# Knowledge over json-files:
+# Each file consists of the revisions / changes of one or more pages.
+# All revisions of a page are in one file.
+# Since a page can have multiple infoboxes, one json-file
+# can contain all changes of multiple infoboxes.
+
 
 class InfoboxProperty(BaseModel):
-    propertyType: Optional[str]
+    propertyType: Optional[str]  # attribute, meta
     name: str
 
 
@@ -22,20 +28,37 @@ class User(BaseModel):
 
 
 class InfoboxRevision(BaseModel):
-    revisionId: int
-    pageTitle: str
+    revisionId: int  # ChangeID of a page
+    # since a page can contain multiple infoboxes it is not unique.
+    pageTitle: str  # self-explanatory: can change, no identifier
     changes: Sequence[InfoboxChange]
-    validFrom: datetime
-    attributes: Optional[Dict[str, str]]
-    pageID: int
-    revisionType: Optional[str]
-    key: str
-    template: Optional[str] = None
-    position: Optional[int] = None
+    validFrom: datetime  # timestamp of the revision
+    attributes: Optional[
+        Dict[str, str]
+    ]  # snapshot after revision of all properties to value mappings
+    pageID: int  # wikipedia pageID: Page key but no infobox id
+    revisionType: Optional[str]  # "CREATE", probably: "DELETE", "UPDATE"
+    key: str  # infobox-key, unrelated to PageID and revisionId
+    template: Optional[
+        str
+    ] = None  # name of the used template / category e.g. "infobox person"
+    position: Optional[int] = None  # i-th infobox of the page in this revision
     user: Optional[User] = None
-    validTo: Optional[datetime] = None
+    validTo: Optional[datetime] = None  # date of the next revision
 
 
-class InfoboxRevisionHistory(BaseModel):
-    key: str
-    revisions: Sequence[InfoboxRevision]
+# TODO: check: InfoboxRevisionHistory.key is globally unique
+#  and all changes are written in one file.
+
+# TODO look for InfoboxProperty.propertyType == "meta" and
+#  look if these are present in source code of wikipedia.
+
+# TODO check: valueValidTo exists if next change exists to that
+#  property. and the date matches.
+
+# TODO check: revision types
+
+# TODO test bot reverts on local dataset.
+
+# Further info can be googled: https://en.wikipedia.org/wiki/Wikipedia:Revision_id
+# https://www.mediawiki.org/wiki/Manual:Database_layout
