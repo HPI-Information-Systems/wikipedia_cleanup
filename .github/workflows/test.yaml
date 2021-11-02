@@ -36,9 +36,9 @@ jobs:
           python get-poetry.py -y
           echo "$HOME/.poetry/bin" >> $GITHUB_PATH
       - name: Set up pre-commit cache
-          uses: actions/cache@v2
-          if: startsWith(runner.os, 'Linux')
-          run: apt install libarchive-dev -y
+        uses: actions/cache@v2
+        if: startsWith(runner.os, 'Linux')
+        run: apt install libarchive-dev -y
       - name: Install dependencies
         run: poetry install --no-interaction
       - name: Run pre-commit hooks
