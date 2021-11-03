@@ -4,7 +4,7 @@ import pickle
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import libarchive.public
 from pydantic import BaseModel
@@ -27,7 +27,6 @@ parser.add_argument(
 )
 parser.add_argument(
     "--test",
-    type=str,
     default=False,
     action="store_true",
     help="Test the script by executing it on only one file.",
@@ -105,11 +104,11 @@ def calculate_output_path(change: InfoboxChange, output_folder: Path) -> Path:
     return output_folder.joinpath(f"{change.page_id}.pickle")
 
 
-def process_json_file(input_file: Path, output_folder: Path) -> None:
+def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
+    input_file, output_folder = input_and_output_path
     changes: List[InfoboxChange] = []
     with libarchive.public.file_reader(str(input_file)) as archive:
         for entry in archive:
-            print(entry.size)
             content_bytes = bytearray("", encoding="utf_8")
             for block in entry.get_blocks():
                 content_bytes += block
@@ -139,10 +138,9 @@ if __name__ == "__main__":
     output_folder = Path(args.output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
     if args.test:
-        process_json_file(input_files[0], output_folder)
-    else:
-        process_map(
-            process_json_file,
-            zip(input_files, [output_folder] * len(input_files)),
-            max_workers=args.max_workers,
-        )
+        input_files = [input_files[0]]
+    process_map(
+        process_json_file,
+        zip(input_files, [output_folder] * len(input_files)),
+        max_workers=args.max_workers,
+    )
