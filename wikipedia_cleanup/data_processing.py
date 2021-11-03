@@ -44,7 +44,7 @@ def get_data(
     else:
         all_changes = []
         for file in tqdm(files):
-            all_changes.extend(read_file(file))
+            all_changes.append(read_file(file))
     all_changes = itertools.chain.from_iterable(all_changes)
     return pd.DataFrame(
         all_changes,

@@ -151,8 +151,12 @@ def get_all_valid_times(archive_path: Path) -> List[float]:
     return valid_times
 
 
-def check_infobox_assertion(archive_path: Path) -> Tuple[Set[str], Path]:
+def check_infobox_assertion(
+    archive_path: Path,
+) -> Tuple[Set[str], Set[str], Set[str], Path]:
     infoboxIDs = set()
+    pageIDs = set()
+    revisionIds = set()
     with libarchive.public.file_reader(str(archive_path)) as archive:
         length = 0
         for entry in archive:
@@ -162,17 +166,13 @@ def check_infobox_assertion(archive_path: Path) -> Tuple[Set[str], Path]:
                 content_bytes += block
             content = content_bytes.decode(encoding="utf_8")
             jsonObjs = content.split("\n")
-            obj = json.loads(jsonObjs[0])
-            # pageID = obj['pageID']
-            # check other jsons of this file have the same infobox key
             for jsonObj in filter(lambda x: x, jsonObjs):
                 obj = json.loads(jsonObj)
                 infoboxIDs.add(obj["key"])
-                # otherPageID = obj['pageID']
-                # assert infoboxID == otherInfoboxID, archive_path
-                # assert pageID == otherPageID, archive_path, archive_path
+                pageIDs.add(obj["pageID"])
+                revisionIds.add(obj["pageID"])
         assert length == 1
-    return infoboxIDs, archive_path
+    return infoboxIDs, pageIDs, revisionIds, archive_path
 
 
 if __name__ == "__main__":
@@ -252,7 +252,9 @@ if __name__ == "__main__":
     res = process_map(check_infobox_assertion, input_files, max_workers=2)
 
     infoboxIDsMap: Dict[str, Path] = {}
-    for infoboxIDs, archive_path in res:
+    pageIDsMap: Dict[str, Path] = {}
+    revisionIdsMap: Dict[str, Path] = {}
+    for infoboxIDs, pageIDs, revisionIds, archive_path in res:
         for infoboxID in infoboxIDs:
             if infoboxID in infoboxIDsMap:
                 print(
@@ -261,3 +263,20 @@ if __name__ == "__main__":
                 )
             else:
                 infoboxIDsMap[infoboxID] = archive_path
+        for pageID in pageIDs:
+            if pageID in pageIDsMap:
+                print(
+                    f"ERROR: Duplicate page: {pageID}: "
+                    f"{archive_path}, {pageIDsMap[pageID]}"
+                )
+            else:
+                pageIDsMap[pageID] = archive_path
+
+        for revisionId in revisionIds:
+            if revisionId in revisionIdsMap:
+                print(
+                    f"ERROR: Duplicate page: {revisionId}: "
+                    f"{archive_path}, {revisionIdsMap[revisionId]}"
+                )
+            else:
+                revisionIdsMap[revisionId] = archive_path
