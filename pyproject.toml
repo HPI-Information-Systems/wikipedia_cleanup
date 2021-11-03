@@ -15,7 +15,6 @@ tqdm = "^4.62.3"
 pydantic = "^1.8.2"
 ipywidgets = "^7.6.5"
 python-Levenshtein = "^0.12.2"
-libarchive = "^0.4.7"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
