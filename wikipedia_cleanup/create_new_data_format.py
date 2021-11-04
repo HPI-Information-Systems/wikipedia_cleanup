@@ -6,7 +6,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import libarchive.public
+#import libarchive.public
 from pydantic import BaseModel
 from tqdm.contrib.concurrent import process_map
 
@@ -57,6 +57,7 @@ class InfoboxChange(BaseModel):
     value_valid_from: datetime
     current_value: Optional[str] = None
     previous_value: Optional[str] = None
+    test: str = None
 
     page_title: str
     revision_id: int
