@@ -37,7 +37,6 @@ def get_representative_value(changes: List[InfoboxChange]) -> InfoboxChange:
     )
     representative_change = deepcopy(changes[int(max_item[1][1])])
     representative_change.value_valid_to = deepcopy(changes[-1].value_valid_to)
-    print(representative_change)
     return representative_change
 
 
