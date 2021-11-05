@@ -1,14 +1,14 @@
 from copy import deepcopy
 from datetime import datetime
-from typing import List
+from typing import List, Union
 
 from wikipedia_cleanup.schema import InfoboxChange
 
+Number = Union[int, float]
+
 
 def get_representative_value(changes: List[InfoboxChange]) -> InfoboxChange:
-    values_to_duration = {
-        change.current_value: [0.0, int(i)] for i, change in enumerate(changes)
-    }
+    values_to_duration = {change.current_value: 0.0 for i, change in enumerate(changes)}
     for change in changes:
         tzinfo = None
         if change.value_valid_from and change.value_valid_from.tzinfo:
@@ -16,26 +16,28 @@ def get_representative_value(changes: List[InfoboxChange]) -> InfoboxChange:
         elif change.value_valid_to and change.value_valid_to.tzinfo:
             tzinfo = change.value_valid_to.tzinfo
         start_date = change.value_valid_from
-        if not start_date:
+        if start_date is None:
             assert change.value_valid_to, "Expected other value to be defined"
             start_date = datetime.combine(
                 change.value_valid_to.date(), datetime.min.time()
             )
         end_date = change.value_valid_to
-        if not end_date:
+        if end_date is None:
             assert change.value_valid_from, "Expected other value to be defined"
-            start_date = datetime.combine(
+            end_date = datetime.combine(
                 change.value_valid_from.date(), datetime.min.time()
             )
         start_date = start_date.replace(tzinfo=tzinfo)
-        end_date = end_date.replace(tzinfo=tzinfo)  # type: ignore
-        values_to_duration[change.current_value][0] += (
+        end_date = end_date.replace(tzinfo=tzinfo)
+        values_to_duration[change.current_value] += (
             end_date - start_date
         ).total_seconds()
-    max_item = max(
-        values_to_duration.items(), key=lambda key_and_val: key_and_val[1][0]
-    )
-    representative_change = deepcopy(changes[int(max_item[1][1])])
+    max_item = max(values_to_duration.items(), key=lambda key_and_val: key_and_val[1])
+    dominant_value = max_item[0]
+    idx = 0
+    while idx < len(changes) and changes[idx].current_value != dominant_value:
+        idx += 1
+    representative_change = deepcopy(changes[idx])
     representative_change.value_valid_to = deepcopy(changes[-1].value_valid_to)
     return representative_change
 
