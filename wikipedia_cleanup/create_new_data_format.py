@@ -2,13 +2,14 @@ import argparse
 import json
 import pickle
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import libarchive.public
-from pydantic import BaseModel
 from tqdm.contrib.concurrent import process_map
+
+from wikipedia_cleanup.majority_value_per_day import filter_to_only_one_value_per_day
+from wikipedia_cleanup.schema import EditType, InfoboxChange, PropertyType
 
 parser = argparse.ArgumentParser(
     description="Transform raw json data to our internal format."
@@ -37,38 +38,6 @@ parser.add_argument(
     default=2,
     help="Max number of workers for parallelization.",
 )
-
-
-class EditType(Enum):
-    CREATE = 0
-    DELETE = 1
-    UPDATE = 2
-
-
-class PropertyType(Enum):
-    ATTRIBUTE = 0
-    META = 1
-
-
-class InfoboxChange(BaseModel):
-    page_id: int
-    property_name: str
-    value_valid_to: Optional[datetime] = None
-    value_valid_from: datetime
-    current_value: Optional[str] = None
-    previous_value: Optional[str] = None
-
-    page_title: str
-    revision_id: int
-    edit_type: EditType
-    property_type: PropertyType
-    comment: Optional[str] = None
-    infobox_key: str
-    username: Optional[str] = None
-    user_id: Optional[str] = None
-    position: Optional[int] = None
-    template: Optional[str] = None
-    revision_valid_to: Optional[datetime] = None
 
 
 def json_to_infobox_change(json_obj: Dict[Any, Any], idx: int) -> InfoboxChange:
@@ -128,6 +97,7 @@ def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
                     change.value_valid_from,
                 )
             )
+    changes = filter_to_only_one_value_per_day(changes)
     with open(calculate_output_path(changes[0], output_folder), "wb") as out_file:
         pickle.dump(changes, out_file)
 
