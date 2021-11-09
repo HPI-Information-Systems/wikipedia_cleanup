@@ -1,9 +1,20 @@
+import argparse
 import json
 from pathlib import Path
 from typing import List, Tuple
 
 import libarchive.public
 from tqdm.contrib.concurrent import process_map
+
+parser = argparse.ArgumentParser(
+    description="Transform raw json data to our internal format."
+)
+parser.add_argument(
+    "--input_folder",
+    type=str,
+    required=True,
+    help="Location of the raw 7z compressed json files.",
+)
 
 
 def get_json_file_stats(input_path: Path) -> Tuple[List[int], List[str]]:
@@ -24,9 +35,8 @@ def get_json_file_stats(input_path: Path) -> Tuple[List[int], List[str]]:
 
 
 if __name__ == "__main__":
-    input_files = list(
-        Path("/home/secret/uni/Masterprojekt/data/matched-infoboxes-raw").rglob("*.7z")
-    )
+    args = parser.parse_args()
+    input_files = list(Path(args.input_folder).rglob("*.7z"))
     res = process_map(
         get_json_file_stats,
         input_files,
