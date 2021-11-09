@@ -43,7 +43,7 @@ if __name__ == "__main__":
         max_workers=3,
     )
     for idx in range(len(res) - 1):
-        page_ids, infobox_ids = res
+        page_ids, infobox_ids = res[idx]
         max_page_id, min_page_id = max(page_ids), min(page_ids)
         max_infobox_id, min_infobox_id = max(infobox_ids), min(infobox_ids)
 
