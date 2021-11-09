@@ -1,48 +1,39 @@
 from copy import deepcopy
-from datetime import datetime
-from typing import List, Union
+from typing import Dict, List, Optional
 
 from wikipedia_cleanup.schema import InfoboxChange
 
-Number = Union[int, float]
 
-
+# This selects the most present value and the last one if
+# there are multiple values with same number of occurrences.
 def get_representative_value(changes: List[InfoboxChange]) -> InfoboxChange:
-    values_to_duration = {change.current_value: 0.0 for i, change in enumerate(changes)}
+    if len(changes) == 1:
+        return changes[0]
+    values_to_occurrences: Dict[Optional[str], int] = {}
     for change in changes:
-        tzinfo = None
-        if change.value_valid_from and change.value_valid_from.tzinfo:
-            tzinfo = change.value_valid_from.tzinfo
-        elif change.value_valid_to and change.value_valid_to.tzinfo:
-            tzinfo = change.value_valid_to.tzinfo
-        start_date = change.value_valid_from
-        if start_date is None:
-            assert change.value_valid_to, "Expected other value to be defined"
-            start_date = datetime.combine(
-                change.value_valid_to.date(), datetime.min.time()
+        if change.current_value in values_to_occurrences.keys():
+            values_to_occurrences[change.current_value] += 1
+        else:
+            values_to_occurrences[change.current_value] = 1
+    max_occurrence = max(values_to_occurrences.items(), key=lambda val_occ: val_occ[1])[
+        1
+    ]
+    representative_change = deepcopy(
+        next(
+            filter(
+                lambda change: values_to_occurrences[change.current_value]
+                >= max_occurrence,
+                reversed(changes),
             )
-        end_date = change.value_valid_to
-        if end_date is None:
-            assert change.value_valid_from, "Expected other value to be defined"
-            end_date = datetime.combine(
-                change.value_valid_from.date(), datetime.min.time()
-            )
-        start_date = start_date.replace(tzinfo=tzinfo)
-        end_date = end_date.replace(tzinfo=tzinfo)
-        values_to_duration[change.current_value] += (
-            end_date - start_date
-        ).total_seconds()
-    max_item = max(values_to_duration.items(), key=lambda key_and_val: key_and_val[1])
-    dominant_value = max_item[0]
-    idx = 0
-    while idx < len(changes) and changes[idx].current_value != dominant_value:
-        idx += 1
-    representative_change = deepcopy(changes[idx])
+        )
+    )
     representative_change.value_valid_to = deepcopy(changes[-1].value_valid_to)
+    representative_change.value_valid_from = deepcopy(changes[0].value_valid_from)
+    representative_change.num_changes = len(changes)
     return representative_change
 
 
-# expects the changes to bes sorted.
+# expects the changes to be sorted.
 def filter_to_only_one_value_per_day(
     changes: List[InfoboxChange],
 ) -> List[InfoboxChange]:

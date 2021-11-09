@@ -1,15 +1,15 @@
 import argparse
 import json
 import pickle
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import List, Tuple
 
 import libarchive.public
 from tqdm.contrib.concurrent import process_map
 
+from wikipedia_cleanup.data_processing import json_to_infobox_changes
 from wikipedia_cleanup.majority_value_per_day import filter_to_only_one_value_per_day
-from wikipedia_cleanup.schema import EditType, InfoboxChange, PropertyType
+from wikipedia_cleanup.schema import InfoboxChange
 
 parser = argparse.ArgumentParser(
     description="Transform raw json data to our internal format."
@@ -40,35 +40,6 @@ parser.add_argument(
 )
 
 
-def json_to_infobox_change(json_obj: Dict[Any, Any], idx: int) -> InfoboxChange:
-    change_obj = json_obj["changes"][idx]
-    return InfoboxChange(
-        page_id=json_obj["pageID"],
-        property_name=change_obj["property"]["name"],
-        value_valid_from=json_obj["validFrom"],
-        value_valid_to=datetime.strptime(
-            change_obj["valueValidTo"], "%Y-%m-%dT%H:%M:%SZ"
-        )
-        if "valueValidTo" in change_obj
-        else None,
-        current_value=change_obj.get("currentValue", None),
-        previous_value=change_obj.get("previousValue", None),
-        page_title=json_obj["pageTitle"],
-        revision_id=json_obj["revisionId"],
-        edit_type=EditType[json_obj["type"].upper()],
-        property_type=PropertyType[change_obj["property"]["type"].upper()],
-        comment=json_obj.get("comment", None),
-        infobox_key=json_obj["key"],
-        username=json_obj["user"].get("username", None)
-        if "user" in json_obj.keys()
-        else None,
-        user_id=json_obj["user"].get("id", None) if "user" in json_obj.keys() else None,
-        position=json_obj.get("position"),
-        template=json_obj.get("template"),
-        revision_valid_to=json_obj.get("validTo", None),
-    )
-
-
 def calculate_output_path(change: InfoboxChange, output_folder: Path) -> Path:
     return output_folder.joinpath(f"{change.page_id}.pickle")
 
@@ -85,9 +56,7 @@ def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
             json_objs = content.split("\n")
             # load all changes into map
             for jsonObj in filter(lambda x: x, json_objs):
-                obj = json.loads(jsonObj)
-                for idx in range(len(obj["changes"])):
-                    changes.append(json_to_infobox_change(obj, 0))
+                changes.extend(json_to_infobox_changes(json.loads(jsonObj)))
             # sort changes after infobox_key, property_name, change.timestamp
             changes.sort(
                 key=lambda change: (
