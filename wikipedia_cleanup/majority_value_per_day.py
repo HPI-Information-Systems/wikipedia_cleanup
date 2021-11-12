@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from wikipedia_cleanup.schema import InfoboxChange
 
@@ -7,7 +7,7 @@ from wikipedia_cleanup.schema import InfoboxChange
 # This selects the most present value and the last one if
 # there are multiple values with same number of occurrences.
 def get_representative_value_for_day(
-    changes: List[InfoboxChange],
+    changes: List[InfoboxChange], **kwargs: Any
 ) -> List[InfoboxChange]:
     if len(changes) == 1:
         return [changes[0]]

@@ -42,6 +42,9 @@ class InfoboxChange(BaseModel):
     ] = None  # date of the next revision for that infobox
     # => revision_valid_to <= value_valid_to
 
+    def __str__(self) -> str:
+        return str(self.__dict__)
+
 
 # Knowledge over json-files:
 # Each file consists of the revisions / changes of one or more pages.

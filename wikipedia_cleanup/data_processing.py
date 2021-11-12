@@ -1,7 +1,6 @@
 import itertools
 import json
 import pickle
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -20,11 +19,7 @@ def json_to_infobox_changes(json_obj: Dict[Any, Any]) -> List[InfoboxChange]:
                 page_id=json_obj["pageID"],
                 property_name=change["property"]["name"],
                 value_valid_from=json_obj["validFrom"],
-                value_valid_to=datetime.strptime(
-                    change["valueValidTo"], "%Y-%m-%dT%H:%M:%SZ"
-                )
-                if "valueValidTo" in change
-                else None,
+                value_valid_to=change.get("valueValidTo", None),
                 current_value=change.get("currentValue", None),
                 previous_value=change.get("previousValue", None),
                 page_title=json_obj["pageTitle"],

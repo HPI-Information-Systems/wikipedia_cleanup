@@ -1,13 +1,19 @@
 import argparse
 import json
+import pickle
 from pathlib import Path
-from typing import Callable, List, Tuple
+from typing import Any, Callable, List, Tuple
 
 import libarchive.public
+from mypy_extensions import Arg, KwArg
 from tqdm.contrib.concurrent import process_map
 
 from wikipedia_cleanup.data_processing import json_to_infobox_changes
 from wikipedia_cleanup.delete_bot_reverts import filter_bot_reverts
+from wikipedia_cleanup.filter_properties_with_new_changes import (
+    filter_properties_with_low_number_of_changes,
+)
+from wikipedia_cleanup.majority_value_per_day import get_representative_value_for_day
 from wikipedia_cleanup.schema import InfoboxChange
 
 parser = argparse.ArgumentParser(
@@ -67,28 +73,40 @@ def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
                 )
             )
     # Apply filters
-    changes = process_changes_per_day_per_property(changes, filter_bot_reverts)
-    # changes = process_changes_per_day_per_property(changes,
-    # get_representative_value_for_day)
-    # with open(calculate_output_path(changes, output_folder), "wb") as out_file:
-    # pickle.dump(changes, out_file)
+    changes = process_changes_per_property(
+        changes, filter_properties_with_low_number_of_changes, min_num_changes=5
+    )
+    changes = process_changes_per_property(changes, filter_bot_reverts)
+    changes = process_changes_per_property(
+        changes, get_representative_value_for_day, group_by_day=True
+    )
+    with open(calculate_output_path(changes, output_folder), "wb") as out_file:
+        pickle.dump(changes, out_file)
 
 
 # expects the changes to be sorted.
-def process_changes_per_day_per_property(
+def process_changes_per_property(
     changes: List[InfoboxChange],
-    func: Callable[[List[InfoboxChange]], List[InfoboxChange]],
+    func: Callable[
+        [Arg(List[InfoboxChange], "changes"), KwArg(Any)],  # noqa: F821
+        List[InfoboxChange],  # noqa: F821
+    ],
+    group_by_day: bool = False,
+    **kwargs: Any,
 ) -> List[InfoboxChange]:
     filtered_changes = []
     start_idx = 0
     for end_idx in range(len(changes)):
         if (
-            changes[start_idx].value_valid_from.date()
-            != changes[end_idx].value_valid_from.date()
+            (
+                changes[start_idx].value_valid_from.date()
+                != changes[end_idx].value_valid_from.date()
+                and group_by_day
+            )
             or changes[start_idx].infobox_key != changes[end_idx].infobox_key
             or changes[start_idx].property_name != changes[end_idx].property_name
         ):
-            filtered_changes.extend(func(changes[start_idx:end_idx]))
+            filtered_changes.extend(func(changes[start_idx:end_idx], **kwargs))
             start_idx = end_idx
     return filtered_changes
 
