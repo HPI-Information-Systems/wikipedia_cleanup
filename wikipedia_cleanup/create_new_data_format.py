@@ -42,7 +42,7 @@ parser.add_argument(
 
 def calculate_output_path(changes: List[InfoboxChange], output_folder: Path) -> Path:
     page_ids = [change.page_id for change in changes]
-    return output_folder.joinpath(f"{min(page_ids)}-{max(page_ids)}-.pickle")
+    return output_folder.joinpath(f"{min(page_ids)}-{max(page_ids)}.pickle")
 
 
 def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
