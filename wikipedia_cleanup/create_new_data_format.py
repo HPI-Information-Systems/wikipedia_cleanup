@@ -40,8 +40,9 @@ parser.add_argument(
 )
 
 
-def calculate_output_path(change: InfoboxChange, output_folder: Path) -> Path:
-    return output_folder.joinpath(f"{change.page_id}.pickle")
+def calculate_output_path(changes: List[InfoboxChange], output_folder: Path) -> Path:
+    page_ids = [change.page_id for change in changes]
+    return output_folder.joinpath(f"{min(page_ids)}-{max(page_ids)}-.pickle")
 
 
 def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
@@ -67,7 +68,7 @@ def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
                 )
             )
     changes = filter_to_only_one_value_per_day(changes)
-    with open(calculate_output_path(changes[0], output_folder), "wb") as out_file:
+    with open(calculate_output_path(changes, output_folder), "wb") as out_file:
         pickle.dump(changes, out_file)
 
 
