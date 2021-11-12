@@ -1,14 +1,13 @@
 import argparse
 import json
-import pickle
 from pathlib import Path
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import libarchive.public
 from tqdm.contrib.concurrent import process_map
 
 from wikipedia_cleanup.data_processing import json_to_infobox_changes
-from wikipedia_cleanup.majority_value_per_day import filter_to_only_one_value_per_day
+from wikipedia_cleanup.delete_bot_reverts import filter_bot_reverts
 from wikipedia_cleanup.schema import InfoboxChange
 
 parser = argparse.ArgumentParser(
@@ -67,9 +66,31 @@ def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
                     change.value_valid_from,
                 )
             )
-    changes = filter_to_only_one_value_per_day(changes)
-    with open(calculate_output_path(changes, output_folder), "wb") as out_file:
-        pickle.dump(changes, out_file)
+    # Apply filters
+    changes = process_changes_per_day_per_property(changes, filter_bot_reverts)
+    # changes = process_changes_per_day_per_property(changes,
+    # get_representative_value_for_day)
+    # with open(calculate_output_path(changes, output_folder), "wb") as out_file:
+    # pickle.dump(changes, out_file)
+
+
+# expects the changes to be sorted.
+def process_changes_per_day_per_property(
+    changes: List[InfoboxChange],
+    func: Callable[[List[InfoboxChange]], List[InfoboxChange]],
+) -> List[InfoboxChange]:
+    filtered_changes = []
+    start_idx = 0
+    for end_idx in range(len(changes)):
+        if (
+            changes[start_idx].value_valid_from.date()
+            != changes[end_idx].value_valid_from.date()
+            or changes[start_idx].infobox_key != changes[end_idx].infobox_key
+            or changes[start_idx].property_name != changes[end_idx].property_name
+        ):
+            filtered_changes.extend(func(changes[start_idx:end_idx]))
+            start_idx = end_idx
+    return filtered_changes
 
 
 if __name__ == "__main__":
