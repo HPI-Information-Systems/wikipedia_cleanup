@@ -73,12 +73,12 @@ def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
                 )
             )
     # Apply filters
-    changes = process_changes_per_property(
-        changes, filter_properties_with_low_number_of_changes, min_num_changes=5
-    )
     changes = process_changes_per_property(changes, filter_bot_reverts)
     changes = process_changes_per_property(
         changes, get_representative_value_for_day, group_by_day=True
+    )
+    changes = process_changes_per_property(
+        changes, filter_properties_with_low_number_of_changes, min_num_changes=5
     )
     with open(calculate_output_path(changes, output_folder), "wb") as out_file:
         pickle.dump(changes, out_file)
