@@ -26,22 +26,14 @@ def filter_bot_reverts(
             if idx > 0:
                 related_change = changes[idx - 1]
                 if change_pair_is_bot_revert(curr_change, related_change):
-                    assert idx > 1, (
-                        f"Expected at least one change before to extend the valid time."
-                        f"\nidx: {idx}\nreverted_change{curr_change}"
-                        f"\nbot_revert{related_change}"
-                    )
-                    changes[idx - 2].value_valid_to = related_change.value_valid_to
+                    if idx > 1:
+                        changes[idx - 2].value_valid_to = related_change.value_valid_to
                     filtered_change_indices.extend([idx, idx - 1])
             if idx < len(changes) - 1:
                 related_change = changes[idx + 1]
                 if change_pair_is_bot_revert(curr_change, related_change):
-                    assert idx > 0, (
-                        f"Expected at least one change before to extend the valid time."
-                        f"\nidx: {idx}\nreverted_change{curr_change}"
-                        f"\nbot_revert{related_change}"
-                    )
-                    changes[idx - 1].value_valid_to = related_change.value_valid_to
+                    if idx > 0:
+                        changes[idx - 1].value_valid_to = related_change.value_valid_to
                     filtered_change_indices.extend([idx, idx + 1])
     filtered_changes = [
         change
