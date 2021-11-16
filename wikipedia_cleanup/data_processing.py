@@ -106,6 +106,7 @@ def get_data(
     The dataframe is guaranteed to be sorted for
     all changes of a page after the priority:
     infobox_key, property_name, value_valid_from.
+    The returned filters contain the accumulated starts of the read.
 
     Example usage:
     ```
@@ -123,9 +124,10 @@ def get_data(
     (Ordered) List of Filters
     that should be applied on the fly when loading.
     Consider using: `get_default_filters()`
-    :return: All change items from all read files
+    :return: Tuple of: All change items from all read files
     where each all files are sorted after
-    (page_id, infobox_key, property_name, value_valid_from)
+    (page_id, infobox_key, property_name, value_valid_from),
+    the resulting filters hold the accumulated stats of the read.
     """
     if filters is None:
         filters = []
