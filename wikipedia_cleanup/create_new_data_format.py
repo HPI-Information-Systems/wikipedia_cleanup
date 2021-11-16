@@ -2,22 +2,23 @@ import argparse
 import json
 import pickle
 from pathlib import Path
-from typing import Any, Callable, List, Tuple
+from typing import List, Tuple
 
 import libarchive.public
-from mypy_extensions import Arg, KwArg
 from tqdm.contrib.concurrent import process_map
 
-from wikipedia_cleanup.data_processing import json_to_infobox_changes
-from wikipedia_cleanup.delete_bot_reverts import filter_bot_reverts
-from wikipedia_cleanup.filter_properties_with_new_changes import (
-    filter_properties_with_low_number_of_changes,
+from wikipedia_cleanup.data_processing import json_to_infobox_changes, read_file_sorted
+from wikipedia_cleanup.DataFilter import (
+    AbstractDataFilter,
+    filter_changes_with,
+    generate_default_filters,
 )
-from wikipedia_cleanup.majority_value_per_day import get_representative_value_for_day
 from wikipedia_cleanup.schema import InfoboxChange
 
 parser = argparse.ArgumentParser(
-    description="Transform raw json data to our internal format."
+    description="Transform any data format to our internal format. "
+    "Additionally filters and sorts the data. "
+    "The filter need to be added manually by editing this file."
 )
 parser.add_argument(
     "--input_folder",
@@ -50,10 +51,9 @@ def calculate_output_path(changes: List[InfoboxChange], output_folder: Path) -> 
     return output_folder.joinpath(f"{min(page_ids)}-{max(page_ids)}.pickle")
 
 
-def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
-    input_file, output_folder = input_and_output_path
+def read_7z_file_sorted(input_path: Path) -> List[InfoboxChange]:
     changes: List[InfoboxChange] = []
-    with libarchive.public.file_reader(str(input_file)) as archive:
+    with libarchive.public.file_reader(str(input_path)) as archive:
         for entry in archive:
             content_bytes = bytearray("", encoding="utf_8")
             for block in entry.get_blocks():
@@ -64,62 +64,47 @@ def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
             for jsonObj in filter(lambda x: x, json_objs):
                 changes.extend(json_to_infobox_changes(json.loads(jsonObj)))
             # sort changes after infobox_key, property_name, change.timestamp
-            changes.sort(
-                key=lambda change: (
-                    change.page_id,
-                    change.infobox_key,
-                    change.property_name,
-                    change.value_valid_from,
-                )
-            )
-    # Apply filters
-    changes = process_changes_per_property(changes, filter_bot_reverts)
-    changes = process_changes_per_property(
-        changes, get_representative_value_for_day, group_by_day=True
-    )
-    changes = process_changes_per_property(
-        changes, filter_properties_with_low_number_of_changes, min_num_changes=5
-    )
+    return changes
+
+
+def write_custom_format(changes: List[InfoboxChange], output_folder: Path) -> None:
     with open(calculate_output_path(changes, output_folder), "wb") as out_file:
         pickle.dump(changes, out_file)
 
 
-# expects the changes to be sorted.
-def process_changes_per_property(
-    changes: List[InfoboxChange],
-    func: Callable[
-        [Arg(List[InfoboxChange], "changes"), KwArg(Any)],  # noqa: F821
-        List[InfoboxChange],  # noqa: F821
-    ],
-    group_by_day: bool = False,
-    **kwargs: Any,
-) -> List[InfoboxChange]:
-    filtered_changes = []
-    start_idx = 0
-    for end_idx in range(len(changes)):
-        if (
-            (
-                changes[start_idx].value_valid_from.date()
-                != changes[end_idx].value_valid_from.date()
-                and group_by_day
-            )
-            or changes[start_idx].infobox_key != changes[end_idx].infobox_key
-            or changes[start_idx].property_name != changes[end_idx].property_name
-        ):
-            filtered_changes.extend(func(changes[start_idx:end_idx], **kwargs))
-            start_idx = end_idx
-    return filtered_changes
+def convert_file_and_apply_filters(
+    input_output_path_filters: Tuple[Path, Path, List[AbstractDataFilter]]
+) -> None:
+    input_file, output_folder, filters = input_output_path_filters
+    if "7z" in str(input_file):
+        changes = read_7z_file_sorted(input_file)
+    else:
+        changes = read_file_sorted(input_file)
+
+    changes = filter_changes_with(changes, filters)
+    if len(changes) > 0:
+        write_custom_format(changes, output_folder)
 
 
 if __name__ == "__main__":
+    # ADD YOUR FILTERS, consider: get_default_filters
+    filters = []
+
     args = parser.parse_args()
     input_files = list(Path(args.input_folder).rglob("*.7z"))
     output_folder = Path(args.output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
+
     if args.test:
         input_files = [input_files[0]]
+        filters = generate_default_filters()
+
     process_map(
-        process_json_file,
-        zip(input_files, [output_folder] * len(input_files)),
+        convert_file_and_apply_filters,
+        zip(
+            input_files,
+            [output_folder] * len(input_files),
+            [filters] * len(input_files),
+        ),
         max_workers=args.max_workers,
     )

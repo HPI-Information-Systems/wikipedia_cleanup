@@ -2,12 +2,17 @@ import itertools
 import json
 import pickle
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 from tqdm import tqdm
 from tqdm.contrib.concurrent import process_map
 
+from wikipedia_cleanup.DataFilter import (
+    AbstractDataFilter,
+    filter_changes_with,
+    generate_default_filters,
+)
 from wikipedia_cleanup.schema import EditType, InfoboxChange, PropertyType
 
 
@@ -56,17 +61,71 @@ def read_pickle_file(file_path: Path) -> List[InfoboxChange]:
         return pickle.load(file)  # type: ignore
 
 
-def read_file(file_path: Path) -> List[InfoboxChange]:
+def sort_changes(changes: List[InfoboxChange]) -> List[InfoboxChange]:
+    changes.sort(
+        key=lambda change: (
+            change.page_id,
+            change.infobox_key,
+            change.property_name,
+            change.value_valid_from,
+        )
+    )
+    return changes
+
+
+def read_file_sorted(file_path: Path) -> List[InfoboxChange]:
     if "pickle" in str(file_path):
+        # pickle is already sorted
         return read_pickle_file(file_path)
     elif "json" in str(file_path):
-        return read_json_file(file_path)
-    raise ValueError("Expected a pickle or json file")
+        return sort_changes(read_json_file(file_path))
+    else:
+        raise ValueError("Expected a pickle or json file")
+
+
+def read_and_filter_file(
+    file_path_and_filters: Tuple[Path, List[AbstractDataFilter]]
+) -> List[InfoboxChange]:
+    file_path, filters = file_path_and_filters
+    changes = read_file_sorted(file_path)
+    return filter_changes_with(changes, filters)
 
 
 def get_data(
-    input_path: Path, n_files: Optional[int] = None, n_jobs: int = 0
+    input_path: Path,
+    n_files: Optional[int] = None,
+    n_jobs: int = 0,
+    filters: Optional[List[AbstractDataFilter]] = None,
 ) -> pd.DataFrame:
+    """
+    Reads the data into a pd.DataFrame from all files in parallel
+    and applies the given filters on the fly.
+    The dataframe is guaranteed to be sorted for
+    all changes of a page after the priority:
+    infobox_key, property_name, value_valid_from.
+
+    Example usage:
+    ```
+    filters = get_default_filters()
+    data_frame = get_data(file_path, filters=filters, n_jobs=5)
+    ```
+
+    :param input_path: :pathlib.Path:
+    Path to the input folder containing decompressed jsons or pickle files.
+    :param n_files :Optional[int]:
+    Number of files to read from the input Folder. None means using all Files.
+    :param n_jobs: int:
+    Number of Jobs / Processes used for parallel reads.
+    :param filters: Optional[List[AbstractDataFilter]]:
+    (Ordered) List of Filters
+    that should be applied on the fly when loading.
+    Consider using: `get_default_filters()`
+    :return: All change items from all read files
+    where each all files are sorted after
+    (page_id, infobox_key, property_name, value_valid_from)
+    """
+    if filters is None:
+        filters = []
     files = [x for x in Path(input_path).rglob("*.output.json") if x.is_file()]
     files.extend([x for x in Path(input_path).rglob("*.pickle") if x.is_file()])
     if n_files is not None:
@@ -74,16 +133,18 @@ def get_data(
     n_jobs = min(n_jobs, len(files))
     files = files[slice(n_files)]
     if n_jobs > 1:
-        all_changes = process_map(read_file, files, max_workers=n_jobs)
+        all_changes = process_map(
+            read_and_filter_file, zip(files, [filters] * len(files)), max_workers=n_jobs
+        )
     else:
         all_changes = []
         for file in tqdm(files):
-            all_changes.append(read_file(file))
+            all_changes.append(read_and_filter_file((file, filters)))
     all_changes = itertools.chain.from_iterable(all_changes)
     return pd.DataFrame([change.__dict__ for change in all_changes])
 
 
-# test
+# local test
 if __name__ == "__main__":
     get_data(
         Path("/home/secret/uni/Masterprojekt/data/test_case_data/output-infobox"),
@@ -97,4 +158,5 @@ if __name__ == "__main__":
         ),
         5,
         3,
+        filters=generate_default_filters(),
     )
