@@ -7,12 +7,14 @@ from typing import List, Tuple
 import libarchive.public
 from tqdm.contrib.concurrent import process_map
 
-from wikipedia_cleanup.data_processing import json_to_infobox_changes, read_file_sorted
-from wikipedia_cleanup.DataFilter import (
+from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
     filter_changes_with,
     generate_default_filters,
+    merge_filter_stats,
+    write_filter_stats_to_file,
 )
+from wikipedia_cleanup.data_processing import json_to_infobox_changes, read_file_sorted
 from wikipedia_cleanup.schema import InfoboxChange
 
 parser = argparse.ArgumentParser(
@@ -74,7 +76,7 @@ def write_custom_format(changes: List[InfoboxChange], output_folder: Path) -> No
 
 def convert_file_and_apply_filters(
     input_output_path_filters: Tuple[Path, Path, List[AbstractDataFilter]]
-) -> None:
+) -> List[AbstractDataFilter]:
     input_file, output_folder, filters = input_output_path_filters
     if "7z" in str(input_file):
         changes = read_7z_file_sorted(input_file)
@@ -84,6 +86,7 @@ def convert_file_and_apply_filters(
     changes = filter_changes_with(changes, filters)
     if len(changes) > 0:
         write_custom_format(changes, output_folder)
+    return filters
 
 
 if __name__ == "__main__":
@@ -96,10 +99,10 @@ if __name__ == "__main__":
     output_folder.mkdir(parents=True, exist_ok=True)
 
     if args.test:
-        input_files = [input_files[0]]
+        input_files = input_files[:2]
         filters = generate_default_filters()
 
-    process_map(
+    mapped_filters = process_map(
         convert_file_and_apply_filters,
         zip(
             input_files,
@@ -108,3 +111,4 @@ if __name__ == "__main__":
         ),
         max_workers=args.max_workers,
     )
+    write_filter_stats_to_file(merge_filter_stats(mapped_filters), output_folder)

@@ -1,6 +1,7 @@
 import itertools
 import json
 import pickle
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -8,10 +9,12 @@ import pandas as pd
 from tqdm import tqdm
 from tqdm.contrib.concurrent import process_map
 
-from wikipedia_cleanup.DataFilter import (
+from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
     filter_changes_with,
     generate_default_filters,
+    get_stats_from_filters,
+    merge_filter_stats,
 )
 from wikipedia_cleanup.schema import EditType, InfoboxChange, PropertyType
 
@@ -85,10 +88,10 @@ def read_file_sorted(file_path: Path) -> List[InfoboxChange]:
 
 def read_and_filter_file(
     file_path_and_filters: Tuple[Path, List[AbstractDataFilter]]
-) -> List[InfoboxChange]:
+) -> Tuple[List[InfoboxChange], List[AbstractDataFilter]]:
     file_path, filters = file_path_and_filters
     changes = read_file_sorted(file_path)
-    return filter_changes_with(changes, filters)
+    return filter_changes_with(changes, filters), filters
 
 
 def get_data(
@@ -96,7 +99,7 @@ def get_data(
     n_files: Optional[int] = None,
     n_jobs: int = 0,
     filters: Optional[List[AbstractDataFilter]] = None,
-) -> pd.DataFrame:
+) -> Tuple[pd.DataFrame, List[AbstractDataFilter]]:
     """
     Reads the data into a pd.DataFrame from all files in parallel
     and applies the given filters on the fly.
@@ -133,25 +136,36 @@ def get_data(
     n_jobs = min(n_jobs, len(files))
     files = files[slice(n_files)]
     if n_jobs > 1:
-        all_changes = process_map(
-            read_and_filter_file, zip(files, [filters] * len(files)), max_workers=n_jobs
+        all_changes, mapped_filters = zip(
+            *process_map(
+                read_and_filter_file,
+                zip(files, [filters] * len(files)),
+                max_workers=n_jobs,
+            )
         )
     else:
         all_changes = []
-        for file in tqdm(files):
-            all_changes.append(read_and_filter_file((file, filters)))
+        mapped_filters = []
+        for file, data_filters in tqdm(
+            zip(files, [deepcopy(filters) for _ in range(len(files))])
+        ):
+            changes_and_filters = read_and_filter_file((file, data_filters))
+            all_changes.append(changes_and_filters[0])
+            mapped_filters.append(changes_and_filters[1])
     all_changes = itertools.chain.from_iterable(all_changes)
-    return pd.DataFrame([change.__dict__ for change in all_changes])
+    filters = merge_filter_stats(mapped_filters)
+    return pd.DataFrame([change.__dict__ for change in all_changes]), filters
 
 
 # local test
 if __name__ == "__main__":
-    get_data(
+    _, merged_filters = get_data(
         Path("/home/secret/uni/Masterprojekt/data/test_case_data/output-infobox"),
         1000,
         3,
     )
-    get_data(
+    assert len(merged_filters) == 0
+    _, merged_filters = get_data(
         Path(
             "/run/media/secret/manjaro-home/secret/mp-data/"
             "costum-format-filtered-dayly/costum-format-filtered-dayly"
@@ -160,3 +174,14 @@ if __name__ == "__main__":
         3,
         filters=generate_default_filters(),
     )
+    print(get_stats_from_filters(merged_filters))
+    _, merged_filters = get_data(
+        Path(
+            "/run/media/secret/manjaro-home/secret/mp-data/"
+            "costum-format-filtered-dayly/costum-format-filtered-dayly"
+        ),
+        5,
+        1,
+        filters=generate_default_filters(),
+    )
+    print(get_stats_from_filters(merged_filters))
