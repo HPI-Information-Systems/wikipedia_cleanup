@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import Counter
 from copy import deepcopy
+from datetime import timedelta
 from pathlib import Path
 from typing import List
 
@@ -85,7 +86,7 @@ class AbstractDataFilter(ABC):
         )
 
 
-class DataFilterMinNumChanges(AbstractDataFilter):
+class MinNumChangesDataFilter(AbstractDataFilter):
     _min_number_of_changes: int
 
     def __init__(self, min_number_of_changes: int = 5):
@@ -100,7 +101,7 @@ class DataFilterMinNumChanges(AbstractDataFilter):
         return [] if len(changes) < self._min_number_of_changes else changes
 
 
-class DataFilterMajorityValuePerDay(AbstractDataFilter):
+class MajorityValuePerDayDataFilter(AbstractDataFilter):
     """
     This filter needs to process each tuple (infobox, property_name, day).
     Therefore the method is overwritten / slightly changes.
@@ -115,10 +116,8 @@ class DataFilterMajorityValuePerDay(AbstractDataFilter):
         start_idx = 0
         for end_idx in range(len(changes)):
             if (
-                (
-                    changes[start_idx].value_valid_from.date()
-                    != changes[end_idx].value_valid_from.date()
-                )
+                changes[start_idx].value_valid_from.date()
+                != changes[end_idx].value_valid_from.date()
                 or changes[start_idx].infobox_key != changes[end_idx].infobox_key
                 or changes[start_idx].property_name != changes[end_idx].property_name
             ):
@@ -151,36 +150,75 @@ class DataFilterMajorityValuePerDay(AbstractDataFilter):
         return [representative_change]
 
 
-class DataFilterBotReverts(AbstractDataFilter):
-    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
-        def change_pair_is_bot_revert(
-            reverted_change: InfoboxChange, bot_revert_change: InfoboxChange
-        ) -> bool:
-            return (
-                reverted_change.value_valid_from == reverted_change.value_valid_to
-                and reverted_change.current_value == bot_revert_change.previous_value
-                and reverted_change.previous_value == bot_revert_change.current_value
-                and reverted_change.value_valid_to == bot_revert_change.value_valid_from
-            )
+class AbstractRevertsDataFilter(AbstractDataFilter, ABC):
+    @abstractmethod
+    def change_pair_needs_to_be_filtered(
+        self, change_a: InfoboxChange, change_b: InfoboxChange
+    ) -> bool:
+        pass
 
-        filtered_changes = []
+    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        filtered_changes: List[InfoboxChange] = []
         idx = 0
         while idx < len(changes) - 1:
-            if change_pair_is_bot_revert(
+            if self.change_pair_needs_to_be_filtered(
                 changes[idx], changes[idx + 1]
-            ) or change_pair_is_bot_revert(changes[idx + 1], changes[idx]):
+            ) or self.change_pair_needs_to_be_filtered(changes[idx + 1], changes[idx]):
+                if len(filtered_changes) > 0:
+                    dates = [
+                        date
+                        for date in [
+                            changes[idx].value_valid_to,
+                            changes[idx].value_valid_to,
+                        ]
+                        if date
+                    ]
+                    filtered_changes[-1].value_valid_to = (
+                        max(dates) if len(dates) > 0 else None
+                    )
                 idx += 2
             else:
                 filtered_changes.append(changes[idx])
                 idx += 1
+        if idx < len(changes):
+            filtered_changes.append(changes[-1])
         return filtered_changes
+
+
+class BotRevertsDataFilter(AbstractRevertsDataFilter):
+    def change_pair_needs_to_be_filtered(
+        self, change_a: InfoboxChange, change_b: InfoboxChange
+    ) -> bool:
+        return (
+            change_a.current_value == change_b.previous_value
+            and change_a.previous_value == change_b.current_value
+            and change_a.value_valid_to == change_b.value_valid_from
+            and change_a.value_valid_from == change_a.value_valid_to
+        )
+
+
+class EditWarRevertsDataFilter(AbstractRevertsDataFilter):
+    def __init__(self, max_time_to_reverting_change: timedelta = timedelta(days=7)):
+        super().__init__()
+        self.max_time_to_reverting_change = max_time_to_reverting_change
+
+    def change_pair_needs_to_be_filtered(
+        self, change_a: InfoboxChange, change_b: InfoboxChange
+    ) -> bool:
+        return (
+            change_a.current_value == change_b.previous_value
+            and change_a.previous_value == change_b.current_value
+            and change_a.value_valid_to == change_b.value_valid_from
+            and (change_a.value_valid_to - change_a.value_valid_from)
+            <= self.max_time_to_reverting_change
+        )
 
 
 def generate_default_filters() -> List[AbstractDataFilter]:
     return [
-        DataFilterBotReverts(),
-        DataFilterMajorityValuePerDay(),
-        DataFilterMinNumChanges(),
+        BotRevertsDataFilter(),
+        MajorityValuePerDayDataFilter(),
+        MinNumChangesDataFilter(),
     ]
 
 

@@ -106,8 +106,7 @@ if __name__ == "__main__":
     output_folder.mkdir(parents=True, exist_ok=True)
 
     if args.test:
-        input_files = input_files[:2]
-        filters = generate_default_filters()
+        input_files = input_files[:5]
 
     mapped_filters = process_map(
         convert_file_and_apply_filters,

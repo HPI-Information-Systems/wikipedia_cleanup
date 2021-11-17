@@ -11,6 +11,7 @@ from tqdm.contrib.concurrent import process_map
 
 from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
+    EditWarRevertsDataFilter,
     filter_changes_with,
     generate_default_filters,
     get_stats_from_filters,
@@ -176,6 +177,7 @@ if __name__ == "__main__":
     )
     print(get_stats_from_filters(filters))
     filters = generate_default_filters()
+    filters.append(EditWarRevertsDataFilter())
     get_data(
         Path(
             "/run/media/secret/manjaro-home/secret/mp-data/"
