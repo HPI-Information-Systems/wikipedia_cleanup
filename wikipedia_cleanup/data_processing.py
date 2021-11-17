@@ -106,7 +106,7 @@ def get_data(
     The dataframe is guaranteed to be sorted for
     all changes of a page after the priority:
     infobox_key, property_name, value_valid_from.
-    The returned filters contain the accumulated starts of the read.
+    The returned filters contain the accumulated stats of the read.
 
     Example usage:
     ```
