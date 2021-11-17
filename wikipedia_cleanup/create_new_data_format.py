@@ -1,18 +1,27 @@
 import argparse
 import json
 import pickle
-from datetime import datetime
+from itertools import repeat
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import List
 
 import libarchive.public
 from tqdm.contrib.concurrent import process_map
 
-from wikipedia_cleanup.majority_value_per_day import filter_to_only_one_value_per_day
-from wikipedia_cleanup.schema import EditType, InfoboxChange, PropertyType
+from wikipedia_cleanup.data_filter import (
+    AbstractDataFilter,
+    filter_changes_with,
+    generate_default_filters,
+    merge_filter_stats_into,
+    write_filter_stats_to_file,
+)
+from wikipedia_cleanup.data_processing import json_to_infobox_changes, read_file_sorted
+from wikipedia_cleanup.schema import InfoboxChange
 
 parser = argparse.ArgumentParser(
-    description="Transform raw json data to our internal format."
+    description="Transform any data format to our internal format. "
+    "Additionally filters and sorts the data. "
+    "The filters need to be added manually by editing this file."
 )
 parser.add_argument(
     "--input_folder",
@@ -38,45 +47,22 @@ parser.add_argument(
     default=2,
     help="Max number of workers for parallelization.",
 )
+parser.add_argument(
+    "--use_default_filters",
+    default=False,
+    action="store_true",
+    help="Use the default filters.",
+)
 
 
-def json_to_infobox_change(json_obj: Dict[Any, Any], idx: int) -> InfoboxChange:
-    change_obj = json_obj["changes"][idx]
-    return InfoboxChange(
-        page_id=json_obj["pageID"],
-        property_name=change_obj["property"]["name"],
-        value_valid_from=json_obj["validFrom"],
-        value_valid_to=datetime.strptime(
-            change_obj["valueValidTo"], "%Y-%m-%dT%H:%M:%SZ"
-        )
-        if "valueValidTo" in change_obj
-        else None,
-        current_value=change_obj.get("currentValue", None),
-        previous_value=change_obj.get("previousValue", None),
-        page_title=json_obj["pageTitle"],
-        revision_id=json_obj["revisionId"],
-        edit_type=EditType[json_obj["type"].upper()],
-        property_type=PropertyType[change_obj["property"]["type"].upper()],
-        comment=json_obj.get("comment", None),
-        infobox_key=json_obj["key"],
-        username=json_obj["user"].get("username", None)
-        if "user" in json_obj.keys()
-        else None,
-        user_id=json_obj["user"].get("id", None) if "user" in json_obj.keys() else None,
-        position=json_obj.get("position"),
-        template=json_obj.get("template"),
-        revision_valid_to=json_obj.get("validTo", None),
-    )
+def calculate_output_path(changes: List[InfoboxChange], output_folder: Path) -> Path:
+    page_ids = [change.page_id for change in changes]
+    return output_folder.joinpath(f"{min(page_ids)}-{max(page_ids)}.pickle")
 
 
-def calculate_output_path(change: InfoboxChange, output_folder: Path) -> Path:
-    return output_folder.joinpath(f"{change.page_id}.pickle")
-
-
-def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
-    input_file, output_folder = input_and_output_path
+def read_7z_file_sorted(input_path: Path) -> List[InfoboxChange]:
     changes: List[InfoboxChange] = []
-    with libarchive.public.file_reader(str(input_file)) as archive:
+    with libarchive.public.file_reader(str(input_path)) as archive:
         for entry in archive:
             content_bytes = bytearray("", encoding="utf_8")
             for block in entry.get_blocks():
@@ -85,32 +71,49 @@ def process_json_file(input_and_output_path: Tuple[Path, Path]) -> None:
             json_objs = content.split("\n")
             # load all changes into map
             for jsonObj in filter(lambda x: x, json_objs):
-                obj = json.loads(jsonObj)
-                for idx in range(len(obj["changes"])):
-                    changes.append(json_to_infobox_change(obj, 0))
+                changes.extend(json_to_infobox_changes(json.loads(jsonObj)))
             # sort changes after infobox_key, property_name, change.timestamp
-            changes.sort(
-                key=lambda change: (
-                    change.page_id,
-                    change.infobox_key,
-                    change.property_name,
-                    change.value_valid_from,
-                )
-            )
-    changes = filter_to_only_one_value_per_day(changes)
-    with open(calculate_output_path(changes[0], output_folder), "wb") as out_file:
+    return changes
+
+
+def write_custom_format(changes: List[InfoboxChange], output_folder: Path) -> None:
+    with open(calculate_output_path(changes, output_folder), "wb") as out_file:
         pickle.dump(changes, out_file)
+
+
+def convert_file_and_apply_filters(
+    input_file: Path, output_folder: Path, filters: List[AbstractDataFilter]
+) -> List[AbstractDataFilter]:
+    if input_file.suffix == ".7z":
+        changes = read_7z_file_sorted(input_file)
+    else:
+        changes = read_file_sorted(input_file)
+
+    changes = filter_changes_with(changes, filters)
+    if len(changes) > 0:
+        write_custom_format(changes, output_folder)
+    return filters
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    # ADD YOUR FILTERS, consider: get_default_filters
+    filters = generate_default_filters() if args.use_default_filters else []
     input_files = list(Path(args.input_folder).rglob("*.7z"))
+    input_files.extend(list(Path(args.input_folder).rglob("*.json")))
+    input_files.extend(list(Path(args.input_folder).rglob("*.pickle")))
     output_folder = Path(args.output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
+
     if args.test:
-        input_files = [input_files[0]]
-    process_map(
-        process_json_file,
-        zip(input_files, [output_folder] * len(input_files)),
+        input_files = input_files[:5]
+
+    mapped_filters = process_map(
+        convert_file_and_apply_filters,
+        input_files,
+        repeat(output_folder),
+        repeat(filters),
         max_workers=args.max_workers,
     )
+    merge_filter_stats_into(mapped_filters, filters)
+    write_filter_stats_to_file(filters, output_folder)
