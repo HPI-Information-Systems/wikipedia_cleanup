@@ -49,7 +49,7 @@ class AbstractDataFilter(ABC):
     ) -> List[InfoboxChange]:
         if self._filter_stats.initial_num_changes != INITIAL_STATS_VALUE:
             print(
-                "WARNING: Using a filter where the stats are not resetted. "
+                "WARNING: Using a filter whose stats are not reset. "
                 "Thus the stats will be overwritten."
             )
         self._filter_stats.initial_num_changes = initial_num_changes
@@ -134,7 +134,7 @@ class DataFilterMajorityValuePerDay(AbstractDataFilter):
             return [changes[0]]
         values_to_occurrences = Counter([change.current_value for change in changes])
         max_occurrence = max(
-            values_to_occurrences.items(), key=lambda val_occ: val_occ[1]
+            values_to_occurrences.iteritems(), key=lambda val_occ: val_occ[1]
         )[1]
         representative_change = deepcopy(
             next(
@@ -222,7 +222,7 @@ def get_stats_from_filters(filters: List[AbstractDataFilter]) -> str:
         ]
     ):
         result += (
-            "WARNING: Initial Number of Changes mismatch for the given Filters. "
+            "WARNING: Initial number of changes mismatch for the given filters. "
             "Filters were probably not used in the same context.\n\n"
         )
     result += "\n".join([str(data_filter) for data_filter in filters])

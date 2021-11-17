@@ -20,7 +20,7 @@ from wikipedia_cleanup.schema import InfoboxChange
 parser = argparse.ArgumentParser(
     description="Transform any data format to our internal format. "
     "Additionally filters and sorts the data. "
-    "The filter need to be added manually by editing this file."
+    "The filters need to be added manually by editing this file."
 )
 parser.add_argument(
     "--input_folder",
