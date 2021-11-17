@@ -27,7 +27,7 @@ class FilterStats:
             f"Initial Number of Changes: \t {self.initial_num_changes}\n"
             f"Input Number of Changes: \t {self.input_num_changes}\n"
             f"Output Number of Changes: \t {self.output_num_changes}\n\n"
-            f"Filtered Total: \t\t\t\t {num_total_deletions} \t "
+            f"Filtered Total: \t\t\t\t\t {num_total_deletions} \t "
             f"{num_total_deletions / self.initial_num_changes * 100} %\n"
             f"Filtered By current Filter: \t\t {num_self_deletions} "
             f"\t current:\t {num_self_deletions / self.input_num_changes * 100} %"
@@ -134,7 +134,7 @@ class DataFilterMajorityValuePerDay(AbstractDataFilter):
             return [changes[0]]
         values_to_occurrences = Counter([change.current_value for change in changes])
         max_occurrence = max(
-            values_to_occurrences.iteritems(), key=lambda val_occ: val_occ[1]
+            values_to_occurrences.items(), key=lambda val_occ: val_occ[1]
         )[1]
         representative_change = deepcopy(
             next(
@@ -195,19 +195,18 @@ def filter_changes_with(
     return changes
 
 
-def merge_filter_stats(
+def merge_filter_stats_into(
     list_of_filters: List[List[AbstractDataFilter]],
-) -> List[AbstractDataFilter]:
+    target_filters: List[AbstractDataFilter],
+) -> None:
     if len(list_of_filters) == 0:
-        return []
-    merged_filters = deepcopy(list_of_filters[0])
+        return
     for filters in list_of_filters[1:]:
         for idx, filter in enumerate(filters):
             filter_name = filter.__class__.__name__
-            if filter_name != merged_filters[idx].__class__.__name__:
+            if filter_name != target_filters[idx].__class__.__name__:
                 raise ValueError("Expected all filters to have the same order.")
-            merged_filters[idx].filter_stats.add_stats(filter.filter_stats)
-    return merged_filters
+            target_filters[idx].filter_stats.add_stats(filter.filter_stats)
 
 
 def get_stats_from_filters(filters: List[AbstractDataFilter]) -> str:

@@ -1,8 +1,9 @@
 import argparse
 import json
 import pickle
+from itertools import repeat
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 import libarchive.public
 from tqdm.contrib.concurrent import process_map
@@ -11,7 +12,7 @@ from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
     filter_changes_with,
     generate_default_filters,
-    merge_filter_stats,
+    merge_filter_stats_into,
     write_filter_stats_to_file,
 )
 from wikipedia_cleanup.data_processing import json_to_infobox_changes, read_file_sorted
@@ -81,9 +82,8 @@ def write_custom_format(changes: List[InfoboxChange], output_folder: Path) -> No
 
 
 def convert_file_and_apply_filters(
-    input_output_path_filters: Tuple[Path, Path, List[AbstractDataFilter]]
+    input_file: Path, output_folder: Path, filters: List[AbstractDataFilter]
 ) -> List[AbstractDataFilter]:
-    input_file, output_folder, filters = input_output_path_filters
     if input_file.suffix == ".7z":
         changes = read_7z_file_sorted(input_file)
     else:
@@ -111,11 +111,10 @@ if __name__ == "__main__":
 
     mapped_filters = process_map(
         convert_file_and_apply_filters,
-        zip(
-            input_files,
-            [output_folder] * len(input_files),
-            [filters] * len(input_files),
-        ),
+        input_files,
+        repeat(output_folder),
+        repeat(filters),
         max_workers=args.max_workers,
     )
-    write_filter_stats_to_file(merge_filter_stats(mapped_filters), output_folder)
+    merge_filter_stats_into(mapped_filters, filters)
+    write_filter_stats_to_file(filters, output_folder)
