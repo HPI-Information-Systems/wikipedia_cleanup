@@ -77,10 +77,10 @@ def sort_changes(changes: List[InfoboxChange]) -> List[InfoboxChange]:
 
 
 def read_file_sorted(file_path: Path) -> List[InfoboxChange]:
-    if "pickle" in str(file_path):
+    if file_path.suffix == ".pickle":
         # pickle is already sorted
         return read_pickle_file(file_path)
-    elif "json" in str(file_path):
+    elif file_path.suffix == ".json":
         return sort_changes(read_json_file(file_path))
     else:
         raise ValueError("Expected a pickle or json file")
@@ -133,10 +133,8 @@ def get_data(
         filters = []
     files = [x for x in Path(input_path).rglob("*.output.json") if x.is_file()]
     files.extend([x for x in Path(input_path).rglob("*.pickle") if x.is_file()])
-    if n_files is not None:
-        n_jobs = min(n_jobs, n_files)
-    n_jobs = min(n_jobs, len(files))
     files = files[slice(n_files)]
+    n_jobs = min(n_jobs, len(files))
     if n_jobs > 1:
         all_changes, mapped_filters = zip(
             *process_map(

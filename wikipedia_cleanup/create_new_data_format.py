@@ -46,6 +46,12 @@ parser.add_argument(
     default=2,
     help="Max number of workers for parallelization.",
 )
+parser.add_argument(
+    "--use_default_filters",
+    default=False,
+    action="store_true",
+    help="Use the default filters.",
+)
 
 
 def calculate_output_path(changes: List[InfoboxChange], output_folder: Path) -> Path:
@@ -78,7 +84,7 @@ def convert_file_and_apply_filters(
     input_output_path_filters: Tuple[Path, Path, List[AbstractDataFilter]]
 ) -> List[AbstractDataFilter]:
     input_file, output_folder, filters = input_output_path_filters
-    if "7z" in str(input_file):
+    if input_file.suffix == ".7z":
         changes = read_7z_file_sorted(input_file)
     else:
         changes = read_file_sorted(input_file)
@@ -90,11 +96,12 @@ def convert_file_and_apply_filters(
 
 
 if __name__ == "__main__":
-    # ADD YOUR FILTERS, consider: get_default_filters
-    filters = []
-
     args = parser.parse_args()
+    # ADD YOUR FILTERS, consider: get_default_filters
+    filters = generate_default_filters() if args.use_default_filters else []
     input_files = list(Path(args.input_folder).rglob("*.7z"))
+    input_files.extend(list(Path(args.input_folder).rglob("*.json")))
+    input_files.extend(list(Path(args.input_folder).rglob("*.pickle")))
     output_folder = Path(args.output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
 

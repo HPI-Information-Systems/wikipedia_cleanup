@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
+from collections import Counter
 from copy import deepcopy
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List
 
 from wikipedia_cleanup.schema import InfoboxChange
 
@@ -40,8 +41,6 @@ class FilterStats:
 
 
 class AbstractDataFilter(ABC):
-    _filter_stats: FilterStats
-
     def __init__(self) -> None:
         self._filter_stats = FilterStats()
 
@@ -133,12 +132,7 @@ class DataFilterMajorityValuePerDay(AbstractDataFilter):
     def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
         if len(changes) == 1:
             return [changes[0]]
-        values_to_occurrences: Dict[Optional[str], int] = {}
-        for change in changes:
-            if change.current_value in values_to_occurrences.keys():
-                values_to_occurrences[change.current_value] += 1
-            else:
-                values_to_occurrences[change.current_value] = 1
+        values_to_occurrences = Counter([change.current_value for change in changes])
         max_occurrence = max(
             values_to_occurrences.items(), key=lambda val_occ: val_occ[1]
         )[1]
@@ -163,46 +157,22 @@ class DataFilterBotReverts(AbstractDataFilter):
             reverted_change: InfoboxChange, bot_revert_change: InfoboxChange
         ) -> bool:
             return (
-                reverted_change.current_value == bot_revert_change.previous_value
+                reverted_change.value_valid_from == reverted_change.value_valid_to
+                and reverted_change.current_value == bot_revert_change.previous_value
                 and reverted_change.previous_value == bot_revert_change.current_value
-                and reverted_change.value_valid_from
-                == bot_revert_change.value_valid_from
-                and reverted_change.value_valid_to == reverted_change.value_valid_to
                 and reverted_change.value_valid_to == bot_revert_change.value_valid_from
             )
 
-        def change_might_be_reverted(change: InfoboxChange) -> bool:
-            return change.value_valid_from == change.value_valid_to
-
-        filtered_change_indices = []
-        for idx in range(len(changes)):
-            curr_change = changes[idx]
-            if change_might_be_reverted(curr_change):
-                # only look back for the reverting bot change if the index exists
-                if idx > 0:
-                    related_change = changes[idx - 1]
-                    if change_pair_is_bot_revert(curr_change, related_change):
-                        # Adjust the valid time if a previous change exists
-                        if idx > 1:
-                            changes[
-                                idx - 2
-                            ].value_valid_to = related_change.value_valid_to
-                        filtered_change_indices.extend([idx, idx - 1])
-                # only look ahead for the reverting bot change if the index exists
-                if idx < len(changes) - 1:
-                    related_change = changes[idx + 1]
-                    if change_pair_is_bot_revert(curr_change, related_change):
-                        # Adjust the valid time if a previous change exists
-                        if idx > 0:
-                            changes[
-                                idx - 1
-                            ].value_valid_to = related_change.value_valid_to
-                        filtered_change_indices.extend([idx, idx + 1])
-        filtered_changes = [
-            change
-            for idx, change in enumerate(changes)
-            if idx not in filtered_change_indices
-        ]
+        filtered_changes = []
+        idx = 0
+        while idx < len(changes) - 1:
+            if change_pair_is_bot_revert(
+                changes[idx], changes[idx + 1]
+            ) or change_pair_is_bot_revert(changes[idx + 1], changes[idx]):
+                idx += 2
+            else:
+                filtered_changes.append(changes[idx])
+                idx += 1
         return filtered_changes
 
 
@@ -217,7 +187,7 @@ def generate_default_filters() -> List[AbstractDataFilter]:
 def filter_changes_with(
     changes: List[InfoboxChange], filters: List[AbstractDataFilter]
 ) -> List[InfoboxChange]:
-    if not filters:
+    if len(filters) == 0:
         return changes
     initial_num_changes = len(changes)
     for data_filter in filters:
@@ -232,11 +202,11 @@ def merge_filter_stats(
         return []
     merged_filters = deepcopy(list_of_filters[0])
     for filters in list_of_filters[1:]:
-        for idx in range(len(filters)):
-            filter_name = filters[idx].__class__.__name__
+        for idx, filter in enumerate(filters):
+            filter_name = filter.__class__.__name__
             if filter_name != merged_filters[idx].__class__.__name__:
                 raise ValueError("Expected all filters to have the same order.")
-            merged_filters[idx].filter_stats.add_stats(filters[idx].filter_stats)
+            merged_filters[idx].filter_stats.add_stats(filter.filter_stats)
     return merged_filters
 
 
