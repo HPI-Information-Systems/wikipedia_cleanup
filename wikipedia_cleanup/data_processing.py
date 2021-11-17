@@ -117,11 +117,11 @@ def get_data(
     :param input_path: :pathlib.Path:
     Path to the input folder containing decompressed jsons or pickle files.
     :param n_files :Optional[int]:
-    Number of files to read from the input Folder. None means using all Files.
+    Number of files to read from the input folder. None means using all files.
     :param n_jobs: int:
-    Number of Jobs / Processes used for parallel reads.
+    Number of jobs / processes used for parallel reads.
     :param filters: Optional[List[AbstractDataFilter]]:
-    (Ordered) List of Filters
+    (Ordered) List of filters
     that should be applied on the fly when loading.
     Consider using: `get_default_filters()`
     :return: Tuple of: All change items from all read files
