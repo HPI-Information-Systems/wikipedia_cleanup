@@ -50,7 +50,7 @@ class AbstractDataFilter(ABC):
     ) -> List[InfoboxChange]:
         if self._filter_stats.initial_num_changes != INITIAL_STATS_VALUE:
             print(
-                "WARNING: Using a filter where the stats are not resetted. "
+                "WARNING: Using a filter whose stats are not reset. "
                 "Thus the stats will be overwritten."
             )
         self._filter_stats.initial_num_changes = initial_num_changes
