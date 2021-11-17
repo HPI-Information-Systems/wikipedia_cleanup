@@ -140,7 +140,7 @@ class DataFilterMajorityValuePerDay(AbstractDataFilter):
             else:
                 values_to_occurrences[change.current_value] = 1
         max_occurrence = max(
-            values_to_occurrences.items(), key=lambda val_occ: val_occ[1]
+            values_to_occurrences.iteritems(), key=lambda val_occ: val_occ[1]
         )[1]
         representative_change = deepcopy(
             next(
