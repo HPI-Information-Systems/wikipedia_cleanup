@@ -252,7 +252,7 @@ def get_stats_from_filters(filters: List[AbstractDataFilter]) -> str:
         ]
     ):
         result += (
-            "WARNING: Initial Number of Changes mismatch for the given Filters. "
+            "WARNING: Initial number of changes mismatch for the given filters. "
             "Filters were probably not used in the same context.\n\n"
         )
     result += "\n".join([str(data_filter) for data_filter in filters])
