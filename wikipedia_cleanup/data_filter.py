@@ -5,7 +5,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import List
 
-from wikipedia_cleanup.schema import InfoboxChange
+from wikipedia_cleanup.schema import InfoboxChange, SparseInfoboxChange
 
 INITIAL_STATS_VALUE = -1
 
@@ -84,6 +84,75 @@ class AbstractDataFilter(ABC):
             f"{self.__class__.__name__}\n"
             f'{"+" * base_print_width}\n' + str(self.filter_stats)
         )
+
+
+class DiscardAttributesDataFilter(AbstractDataFilter):
+    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        raise NotImplementedError("This method should never be called.")
+
+    def filter(
+        self, changes: List[InfoboxChange], initial_num_changes: int
+    ) -> List[InfoboxChange]:
+        self.filter_stats.initial_num_changes = initial_num_changes
+        self.filter_stats.input_num_changes = initial_num_changes
+        self.filter_stats.output_num_changes = initial_num_changes
+
+        sparse_changes = []
+        for change in changes:
+            sparse_change: InfoboxChange = SparseInfoboxChange()  # type: ignore
+
+            sparse_change.page_id = change.page_id
+            sparse_change.property_name = change.property_name
+            sparse_change.value_valid_to = change.value_valid_to
+            sparse_change.value_valid_from = change.value_valid_from
+            sparse_change.current_value = change.current_value
+            sparse_change.previous_value = change.previous_value
+            sparse_change.num_changes = change.num_changes
+
+            sparse_change.page_title = change.page_title
+            sparse_change.revision_id = change.revision_id
+            sparse_change.edit_type = change.edit_type
+            sparse_change.property_type = change.property_type
+            sparse_change.comment = change.comment
+            sparse_change.infobox_key = change.infobox_key
+            sparse_change.username = change.username
+            sparse_change.user_id = change.user_id
+            sparse_change.position = change.position
+            sparse_change.template = change.template
+            sparse_change.revision_valid_to = change.revision_valid_to
+
+            sparse_changes.append(sparse_change)
+        return sparse_changes
+
+
+class TestDiscardAttributesDataFilter(AbstractDataFilter):
+    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        raise NotImplementedError("This method should never be called.")
+
+    def filter(
+        self, changes: List[InfoboxChange], initial_num_changes: int
+    ) -> List[InfoboxChange]:
+        self.filter_stats.initial_num_changes = initial_num_changes
+        self.filter_stats.input_num_changes = initial_num_changes
+        self.filter_stats.output_num_changes = initial_num_changes
+
+        sparse_changes = []
+        for change in changes:
+            sparse_change: InfoboxChange = SparseInfoboxChange()  # type: ignore
+
+            sparse_change.page_id = change.page_id
+            sparse_change.property_name = change.property_name
+            sparse_change.value_valid_to = change.value_valid_to
+            sparse_change.value_valid_from = change.value_valid_from
+            sparse_change.current_value = change.current_value
+            sparse_change.previous_value = change.previous_value
+            sparse_change.num_changes = change.num_changes
+
+            sparse_change.infobox_key = change.infobox_key
+            sparse_change.revision_valid_to = change.revision_valid_to
+
+            sparse_changes.append(sparse_change)
+        return sparse_changes
 
 
 class MinNumChangesDataFilter(AbstractDataFilter):

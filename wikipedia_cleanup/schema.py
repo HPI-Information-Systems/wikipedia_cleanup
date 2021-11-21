@@ -40,10 +40,26 @@ class InfoboxChange(BaseModel):
     revision_valid_to: Optional[
         datetime
     ] = None  # date of the next revision for that infobox
+
     # => revision_valid_to <= value_valid_to
 
     def __str__(self) -> str:
         return str(self.__dict__)
+
+
+"""
+Empty class that can be used to use less RAM. All attributes are basically optional.
+But optional would still cost us a nullptr.
+Therefore all attributes need to be added on manually.
+E.g.
+a = SparseInfoboxChange()
+a.page_id = change.page_id
+...
+"""
+
+
+class SparseInfoboxChange:
+    pass
 
 
 # Knowledge over json-files:

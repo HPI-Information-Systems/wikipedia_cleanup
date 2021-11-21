@@ -12,6 +12,7 @@ from tqdm.contrib.concurrent import process_map
 from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
     EditWarRevertsDataFilter,
+    TestDiscardAttributesDataFilter,
     filter_changes_with,
     generate_default_filters,
     get_stats_from_filters,
@@ -46,6 +47,7 @@ def json_to_infobox_changes(json_obj: Dict[Any, Any]) -> List[InfoboxChange]:
                 position=json_obj.get("position"),
                 template=json_obj.get("template"),
                 revision_valid_to=json_obj.get("validTo", None),
+                num_changes=1,
             )
         )
     return changes
@@ -178,6 +180,19 @@ if __name__ == "__main__":
     print(get_stats_from_filters(filters))
     filters = generate_default_filters()
     filters.append(EditWarRevertsDataFilter())
+    get_data(
+        Path(
+            "/run/media/secret/manjaro-home/secret/mp-data/"
+            "costum-format-filtered-dayly/costum-format-filtered-dayly"
+        ),
+        5,
+        1,
+        filters=filters,
+    )
+    print(get_stats_from_filters(filters))
+
+    filters = generate_default_filters()
+    filters.insert(0, TestDiscardAttributesDataFilter())
     get_data(
         Path(
             "/run/media/secret/manjaro-home/secret/mp-data/"
