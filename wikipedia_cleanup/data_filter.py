@@ -5,7 +5,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import List
 
-from wikipedia_cleanup.schema import InfoboxChange
+from wikipedia_cleanup.schema import InfoboxChange, SparseInfoboxChange
 
 INITIAL_STATS_VALUE = -1
 
@@ -84,6 +84,31 @@ class AbstractDataFilter(ABC):
             f"{self.__class__.__name__}\n"
             f'{"+" * base_print_width}\n' + str(self.filter_stats)
         )
+
+
+class DiscardAttributesDataFilter(AbstractDataFilter):
+    def __init__(self, attributes_to_keep: List[str]):
+        super().__init__()
+        self.attributes_to_keep = attributes_to_keep
+
+    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        raise NotImplementedError("This method should never be called.")
+
+    def filter(
+        self, changes: List[InfoboxChange], initial_num_changes: int
+    ) -> List[InfoboxChange]:
+        self.filter_stats.initial_num_changes = initial_num_changes
+        self.filter_stats.input_num_changes = len(changes)
+        self.filter_stats.output_num_changes = len(changes)
+
+        sparse_changes = []
+        for change in changes:
+            sparse_change: InfoboxChange = SparseInfoboxChange()  # type: ignore
+            for attribute in self.attributes_to_keep:
+                setattr(sparse_change, attribute, getattr(change, attribute))
+
+            sparse_changes.append(sparse_change)
+        return sparse_changes
 
 
 class MinNumChangesDataFilter(AbstractDataFilter):

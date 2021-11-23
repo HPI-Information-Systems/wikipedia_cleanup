@@ -11,6 +11,7 @@ from tqdm.contrib.concurrent import process_map
 
 from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
+    DiscardAttributesDataFilter,
     EditWarRevertsDataFilter,
     filter_changes_with,
     generate_default_filters,
@@ -46,6 +47,7 @@ def json_to_infobox_changes(json_obj: Dict[Any, Any]) -> List[InfoboxChange]:
                 position=json_obj.get("position"),
                 template=json_obj.get("template"),
                 revision_valid_to=json_obj.get("validTo", None),
+                num_changes=1,
             )
         )
     return changes
@@ -186,5 +188,17 @@ if __name__ == "__main__":
         5,
         1,
         filters=filters,
+    )
+    print(get_stats_from_filters(filters))
+
+    filters = generate_default_filters()
+    filters.append(DiscardAttributesDataFilter(["page_id", "property_name"]))
+    print(
+        get_data(
+            Path("/home/secret/uni/Masterprojekt/data/test_case_data/output-infobox"),
+            5,
+            1,
+            filters=filters,
+        ).head()
     )
     print(get_stats_from_filters(filters))
