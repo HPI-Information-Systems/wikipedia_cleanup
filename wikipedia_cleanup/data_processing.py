@@ -12,6 +12,7 @@ from tqdm.contrib.concurrent import process_map
 from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
     DiscardAttributesDataFilter,
+    EditWarRevertsDataFilter,
     filter_changes_with,
     generate_default_filters,
     get_stats_from_filters,
@@ -161,7 +162,7 @@ def get_data(
 
 # local test
 if __name__ == "__main__":
-    """get_data(
+    get_data(
         Path("/home/secret/uni/Masterprojekt/data/test_case_data/output-infobox"),
         1000,
         3,
@@ -188,7 +189,7 @@ if __name__ == "__main__":
         1,
         filters=filters,
     )
-    print(get_stats_from_filters(filters))"""
+    print(get_stats_from_filters(filters))
 
     filters = generate_default_filters()
     filters.append(DiscardAttributesDataFilter(["page_id", "property_name"]))
