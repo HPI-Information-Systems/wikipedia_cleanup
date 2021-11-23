@@ -86,7 +86,7 @@ class AbstractDataFilter(ABC):
         )
 
 
-class DiscardAttributesDataFilter(AbstractDataFilter):
+class KeepAttributesDataFilter(AbstractDataFilter):
     def __init__(self, attributes_to_keep: List[str]):
         super().__init__()
         self.attributes_to_keep = attributes_to_keep
