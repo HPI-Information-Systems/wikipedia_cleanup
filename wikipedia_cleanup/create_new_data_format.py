@@ -10,6 +10,7 @@ from tqdm.contrib.concurrent import process_map
 
 from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
+    DiscardAttributesDataFilter,
     filter_changes_with,
     generate_default_filters,
     merge_filter_stats_into,
@@ -99,6 +100,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     # ADD YOUR FILTERS, consider: get_default_filters
     filters = generate_default_filters() if args.use_default_filters else []
+    filters.append(DiscardAttributesDataFilter(["page_id"]))
     input_files = list(Path(args.input_folder).rglob("*.7z"))
     input_files.extend(list(Path(args.input_folder).rglob("*.json")))
     input_files.extend(list(Path(args.input_folder).rglob("*.pickle")))

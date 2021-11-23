@@ -40,10 +40,15 @@ class InfoboxChange(BaseModel):
     revision_valid_to: Optional[
         datetime
     ] = None  # date of the next revision for that infobox
+
     # => revision_valid_to <= value_valid_to
 
     def __str__(self) -> str:
         return str(self.__dict__)
+
+
+class SparseInfoboxChange:
+    pass
 
 
 # Knowledge over json-files:
