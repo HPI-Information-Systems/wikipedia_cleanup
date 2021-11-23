@@ -1,7 +1,55 @@
 from datetime import datetime
-from typing import Dict, Optional, Sequence
+from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel
+
+
+class EditType(Enum):
+    CREATE = 0
+    DELETE = 1
+    UPDATE = 2
+
+
+class PropertyType(Enum):
+    ATTRIBUTE = 0
+    META = 1
+
+
+class InfoboxChange(BaseModel):
+    page_id: int  # wikipedia pageID: Page key but no infobox id
+    property_name: str
+    value_valid_to: Optional[datetime] = None
+    value_valid_from: datetime  # timestamp of the revision
+    current_value: Optional[str] = None
+    previous_value: Optional[str] = None
+    num_changes: int = 1
+
+    page_title: str  # self-explanatory: can change, no identifier
+    revision_id: int  # ChangeID of a page
+    edit_type: EditType
+    property_type: PropertyType
+    comment: Optional[str] = None
+    infobox_key: str  # infobox-key, unrelated to PageID and revisionId, globally unique
+    username: Optional[str] = None
+    user_id: Optional[str] = None
+    position: Optional[int] = None  # i-th infobox of the page in this revision
+    template: Optional[
+        str
+    ] = None  # name of the used template / category e.g. "infobox person"
+    revision_valid_to: Optional[
+        datetime
+    ] = None  # date of the next revision for that infobox
+
+    # => revision_valid_to <= value_valid_to
+
+    def __str__(self) -> str:
+        return str(self.__dict__)
+
+
+class SparseInfoboxChange:
+    pass
+
 
 # Knowledge over json-files:
 # Each file consists of the revisions / changes of one or more pages.
@@ -9,46 +57,8 @@ from pydantic import BaseModel
 # Since a page can have multiple infoboxes, one json-file
 # can contain all changes of multiple infoboxes.
 
-
-class InfoboxProperty(BaseModel):
-    propertyType: Optional[str]  # attribute, meta
-    name: str
-
-
-class InfoboxChange(BaseModel):
-    property: InfoboxProperty
-    valueValidTo: Optional[datetime] = None
-    currentValue: Optional[str] = None
-    previousValue: Optional[str] = None
-
-
-class User(BaseModel):
-    username: Optional[str]
-    id: Optional[int]
-
-
-class InfoboxRevision(BaseModel):
-    revisionId: int  # ChangeID of a page
-    # since a page can contain multiple infoboxes it is not unique.
-    pageTitle: str  # self-explanatory: can change, no identifier
-    changes: Sequence[InfoboxChange]
-    validFrom: datetime  # timestamp of the revision
-    attributes: Optional[
-        Dict[str, str]
-    ]  # snapshot after revision of all properties to value mappings
-    pageID: int  # wikipedia pageID: Page key but no infobox id
-    revisionType: Optional[str]  # "CREATE", probably: "DELETE", "UPDATE"
-    key: str  # infobox-key, unrelated to PageID and revisionId
-    template: Optional[
-        str
-    ] = None  # name of the used template / category e.g. "infobox person"
-    position: Optional[int] = None  # i-th infobox of the page in this revision
-    user: Optional[User] = None
-    validTo: Optional[datetime] = None  # date of the next revision
-
-
 # TODO: check: InfoboxRevisionHistory.key is globally unique
-#  and all changes are written in one file.
+#  and all changes are written in one file. = true
 
 # TODO look for InfoboxProperty.propertyType == "meta" and
 #  look if these are present in source code of wikipedia.
