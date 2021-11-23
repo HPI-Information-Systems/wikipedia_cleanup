@@ -87,6 +87,10 @@ class AbstractDataFilter(ABC):
 
 
 class DiscardAttributesDataFilter(AbstractDataFilter):
+    def __init__(self, attributes_to_keep: List[str]):
+        super().__init__()
+        self.attributes_to_keep = attributes_to_keep
+
     def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
         raise NotImplementedError("This method should never be called.")
 
@@ -94,62 +98,14 @@ class DiscardAttributesDataFilter(AbstractDataFilter):
         self, changes: List[InfoboxChange], initial_num_changes: int
     ) -> List[InfoboxChange]:
         self.filter_stats.initial_num_changes = initial_num_changes
-        self.filter_stats.input_num_changes = initial_num_changes
-        self.filter_stats.output_num_changes = initial_num_changes
+        self.filter_stats.input_num_changes = len(changes)
+        self.filter_stats.output_num_changes = len(changes)
 
         sparse_changes = []
         for change in changes:
             sparse_change: InfoboxChange = SparseInfoboxChange()  # type: ignore
-
-            sparse_change.page_id = change.page_id
-            sparse_change.property_name = change.property_name
-            sparse_change.value_valid_to = change.value_valid_to
-            sparse_change.value_valid_from = change.value_valid_from
-            sparse_change.current_value = change.current_value
-            sparse_change.previous_value = change.previous_value
-            sparse_change.num_changes = change.num_changes
-
-            sparse_change.page_title = change.page_title
-            sparse_change.revision_id = change.revision_id
-            sparse_change.edit_type = change.edit_type
-            sparse_change.property_type = change.property_type
-            sparse_change.comment = change.comment
-            sparse_change.infobox_key = change.infobox_key
-            sparse_change.username = change.username
-            sparse_change.user_id = change.user_id
-            sparse_change.position = change.position
-            sparse_change.template = change.template
-            sparse_change.revision_valid_to = change.revision_valid_to
-
-            sparse_changes.append(sparse_change)
-        return sparse_changes
-
-
-class TestDiscardAttributesDataFilter(AbstractDataFilter):
-    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
-        raise NotImplementedError("This method should never be called.")
-
-    def filter(
-        self, changes: List[InfoboxChange], initial_num_changes: int
-    ) -> List[InfoboxChange]:
-        self.filter_stats.initial_num_changes = initial_num_changes
-        self.filter_stats.input_num_changes = initial_num_changes
-        self.filter_stats.output_num_changes = initial_num_changes
-
-        sparse_changes = []
-        for change in changes:
-            sparse_change: InfoboxChange = SparseInfoboxChange()  # type: ignore
-
-            sparse_change.page_id = change.page_id
-            sparse_change.property_name = change.property_name
-            sparse_change.value_valid_to = change.value_valid_to
-            sparse_change.value_valid_from = change.value_valid_from
-            sparse_change.current_value = change.current_value
-            sparse_change.previous_value = change.previous_value
-            sparse_change.num_changes = change.num_changes
-
-            sparse_change.infobox_key = change.infobox_key
-            sparse_change.revision_valid_to = change.revision_valid_to
+            for attribute in self.attributes_to_keep:
+                setattr(sparse_change, attribute, getattr(change, attribute))
 
             sparse_changes.append(sparse_change)
         return sparse_changes

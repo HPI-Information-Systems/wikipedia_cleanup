@@ -48,16 +48,6 @@ class InfoboxChange(BaseModel):
 
 
 class SparseInfoboxChange:
-    """
-    Empty class that can be used to use less RAM. All attributes are basically optional.
-    But optional would still cost us a nullptr.
-    Therefore all attributes need to be added on manually.
-    E.g.
-    a = SparseInfoboxChange()
-    a.page_id = change.page_id
-    ...
-    """
-
     pass
 
 
