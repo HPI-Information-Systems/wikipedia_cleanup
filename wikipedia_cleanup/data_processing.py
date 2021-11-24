@@ -144,6 +144,7 @@ def get_data(
                 files,
                 itertools.repeat(filters),
                 max_workers=n_jobs,
+                total=len(files),
             )
         )
     else:
