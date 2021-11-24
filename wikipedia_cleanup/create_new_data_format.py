@@ -10,13 +10,16 @@ from tqdm.contrib.concurrent import process_map
 
 from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
-    DiscardAttributesDataFilter,
     filter_changes_with,
     generate_default_filters,
     merge_filter_stats_into,
     write_filter_stats_to_file,
 )
-from wikipedia_cleanup.data_processing import json_to_infobox_changes, read_file_sorted
+from wikipedia_cleanup.data_processing import (
+    json_to_infobox_changes,
+    read_file_sorted,
+    sort_changes,
+)
 from wikipedia_cleanup.schema import InfoboxChange
 
 parser = argparse.ArgumentParser(
@@ -61,7 +64,7 @@ def calculate_output_path(changes: List[InfoboxChange], output_folder: Path) -> 
     return output_folder.joinpath(f"{min(page_ids)}-{max(page_ids)}.pickle")
 
 
-def read_7z_file_sorted(input_path: Path) -> List[InfoboxChange]:
+def read_7z_file(input_path: Path) -> List[InfoboxChange]:
     changes: List[InfoboxChange] = []
     with libarchive.public.file_reader(str(input_path)) as archive:
         for entry in archive:
@@ -86,7 +89,7 @@ def convert_file_and_apply_filters(
     input_file: Path, output_folder: Path, filters: List[AbstractDataFilter]
 ) -> List[AbstractDataFilter]:
     if input_file.suffix == ".7z":
-        changes = read_7z_file_sorted(input_file)
+        changes = sort_changes(read_7z_file(input_file))
     else:
         changes = read_file_sorted(input_file)
 
@@ -100,7 +103,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     # ADD YOUR FILTERS, consider: get_default_filters
     filters = generate_default_filters() if args.use_default_filters else []
-    filters.append(DiscardAttributesDataFilter(["page_id"]))
     input_files = list(Path(args.input_folder).rglob("*.7z"))
     input_files.extend(list(Path(args.input_folder).rglob("*.json")))
     input_files.extend(list(Path(args.input_folder).rglob("*.pickle")))
