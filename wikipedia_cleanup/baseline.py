@@ -4,7 +4,7 @@ from typing import Optional
 import numpy as np
 
 
-def next_change(previous_change_timestamps: np.array[datetime]) -> Optional[datetime]:
+def next_change(previous_change_timestamps: np.ndarray) -> Optional[datetime]:
     if len(previous_change_timestamps) < 2:
         return None
 
