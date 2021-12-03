@@ -128,6 +128,9 @@ class MinNumChangesDataFilter(AbstractDataFilter):
 
 class OnlyUpdatesDataFilter(AbstractDataFilter):
 
+    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        raise NotImplementedError("This method should never be called.")
+
     def filter(
             self, changes: List[InfoboxChange], initial_num_changes: int
     ) -> List[InfoboxChange]:
