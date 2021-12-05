@@ -127,22 +127,21 @@ class MinNumChangesDataFilter(AbstractDataFilter):
 
 
 class OnlyUpdatesDataFilter(AbstractDataFilter):
-
     def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
         raise NotImplementedError("This method should never be called.")
 
     def filter(
-            self, changes: List[InfoboxChange], initial_num_changes: int
+        self, changes: List[InfoboxChange], initial_num_changes: int
     ) -> List[InfoboxChange]:
-        filtered_changes = []
         self._filter_stats.initial_num_changes = initial_num_changes
         self._filter_stats.input_num_changes = len(changes)
-        for change in changes:
-            if change.previous_value and change.previous_value:
-                filtered_changes.append(change)
+        filtered_changes = [
+            change
+            for change in changes
+            if change.previous_value and change.previous_value
+        ]
         self._filter_stats.output_num_changes = len(filtered_changes)
         return filtered_changes
-
 
 
 class MajorityValuePerDayDataFilter(AbstractDataFilter):
