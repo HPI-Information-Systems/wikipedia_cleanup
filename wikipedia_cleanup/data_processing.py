@@ -144,15 +144,14 @@ def get_data(
                 files,
                 itertools.repeat(filters),
                 max_workers=n_jobs,
-                total=len(files)
+                total=len(files),
             )
         )
     else:
         all_changes = []
         mapped_filters = []
         for file, data_filters in tqdm(
-            zip(files, [deepcopy(filters) for _ in range(len(files))]),
-            total=len(files)
+            zip(files, [deepcopy(filters) for _ in range(len(files))]), total=len(files)
         ):
             changes_and_filters = read_and_filter_file(file, data_filters)
             all_changes.append(changes_and_filters[0])
