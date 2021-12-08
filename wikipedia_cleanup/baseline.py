@@ -17,22 +17,25 @@ class TrainAndPredictFramework:
     def __init__(
         self,
         predictor: "Predictor",
+        group_key: List[str],
         test_start_date: datetime = datetime(2018, 9, 1),
         test_duration: int = 365,
     ):
         self.test_start_date = test_start_date
         self.test_duration = test_duration
+        self.group_key = group_key
         # total_time_window = timedelta(testset_duration)  # days
         # testset_end = testset_start + total_time_window
         # time_offset = timedelta(1)
 
         self.predictor = predictor
-        own_relevant_attributes = [
-            "page_id",
-            "value_valid_from",
-        ]  # 'infobox_key', 'property_name',
+        own_relevant_attributes = ["value_valid_from"]
         self.relevant_attributes = list(
-            set(own_relevant_attributes + predictor.get_relevant_attributes())
+            set(
+                own_relevant_attributes
+                + predictor.get_relevant_attributes()
+                + self.group_key
+            )
         )
         self.data: pd.DataFrame = pd.DataFrame()
 
@@ -44,6 +47,9 @@ class TrainAndPredictFramework:
         self.data["value_valid_from"] = self.data["value_valid_from"].dt.tz_localize(
             None
         )
+        self.data["key"] = list(
+            zip(*[self.data[group_key] for group_key in self.group_key])
+        )
 
     def fit_model(self):
         train_data = self.data[self.data["value_valid_from"] < self.test_start_date]
@@ -51,7 +57,7 @@ class TrainAndPredictFramework:
 
     @profile
     def test_model(self):
-        page_ids = self.data["page_id"].unique()
+        page_ids = self.data["key"].unique()
         all_day_labels = []
         test_dates = [
             (self.test_start_date + timedelta(days=x)).date()
@@ -62,21 +68,22 @@ class TrainAndPredictFramework:
         timeframe_labels = ["day", "week", "month", "year"]
         predictions = [[] for _ in testing_timeframes]
 
-        for page_id in tqdm(page_ids):
+        for page_id in tqdm(page_ids[:200]):
             days_evaluated = 0
             train_data_idx = 0
             current_page_predictions = [[] for _ in testing_timeframes]
 
             relevant_page_ids = self.predictor.get_relevant_ids(page_id)
             current_data = self.data[
-                self.data["page_id"].isin(relevant_page_ids)
+                self.data["key"].isin(relevant_page_ids)
             ].sort_values(by=["value_valid_from"])
             test_set_timestamps = current_data["value_valid_from"].dt.date.to_numpy()
 
-            current_page_id_timestamps = self.data[self.data["page_id"] == page_id][
+            current_page_id_timestamps = self.data[self.data["key"] == page_id][
                 "value_valid_from"
             ].dt.date.to_numpy()
             day_labels = [date in current_page_id_timestamps for date in test_dates]
+            train_input = current_data.iloc[:0]
             for current_date in test_dates:
                 # todo provide data of other page_ids for the current day.
                 if len(test_set_timestamps) > 0:
@@ -114,14 +121,14 @@ class TrainAndPredictFramework:
             prediction_stats.append(self.evaluate_prediction(y_true, y_hat, title))
         return prediction_stats
 
-    def aggregate_labels(self, labels, n):
+    def aggregate_labels(self, labels: np.ndarray, n: int):
         if n == 1:
             return labels
         if self.test_duration % n != 0:
             padded_labels = np.pad(labels, ((0, 0), (0, n - self.test_duration % n)))
         else:
             padded_labels = labels
-        padded_labels = padded_labels.reshape(-1, n, labels.shape[0])
+        padded_labels = padded_labels.reshape((-1, n, labels.shape[0]))
         return np.any(padded_labels, axis=1).reshape(labels.shape[0], -1)
 
     @staticmethod
@@ -189,7 +196,7 @@ class Predictor(ABC):
 
     @abstractmethod
     def predict_timeframe(
-        self, data: pd.DataFrame, current_day: datetime, timeframe: int
+        self, data: pd.DataFrame, current_day: date, timeframe: int
     ) -> bool:
         raise NotImplementedError()
 
@@ -203,7 +210,7 @@ class ZeroPredictor(Predictor):
         pass
 
     def predict_timeframe(
-        self, data: pd.DataFrame, current_day: datetime, timeframe: int
+        self, data: pd.DataFrame, current_day: date, timeframe: int
     ) -> bool:
         return False
 
@@ -217,7 +224,7 @@ class ZeroPredictor(Predictor):
 
 class DummyPredictor(ZeroPredictor):
     def predict_timeframe(
-        self, data: pd.DataFrame, current_day: datetime, timeframe: int
+        self, data: pd.DataFrame, current_day: date, timeframe: int
     ) -> bool:
         pred = next_change(data)
         if pred is None:
@@ -226,13 +233,14 @@ class DummyPredictor(ZeroPredictor):
 
 
 if __name__ == "__main__":
-    n_files = 8
+    n_files = 1
     n_jobs = 4
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
     model = DummyPredictor()
-    framework = TrainAndPredictFramework(model)
+    # framework = TrainAndPredictFramework(model, ['infobox_key', 'property_name'])
+    framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
     framework.test_model()
