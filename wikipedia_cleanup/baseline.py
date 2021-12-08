@@ -1,6 +1,7 @@
-from datetime import datetime, timedelta
+from abc import ABC, abstractmethod
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -152,24 +153,19 @@ class TrainAndPredictFramework:
         pass
 
 
-def next_change(previous_change_timestamps: np.ndarray) -> Optional[datetime]:
+def next_change(time_series: pd.DataFrame) -> Optional[date]:
+    previous_change_timestamps = time_series["value_valid_from"].to_numpy()
     if len(previous_change_timestamps) < 2:
         return None
 
-    mean_time_to_change: timedelta = np.mean(
+    mean_time_to_change: np.timedelta64 = np.mean(
         previous_change_timestamps[1:] - previous_change_timestamps[0:-1]
     )
-    return_value: datetime = previous_change_timestamps[-1] + mean_time_to_change
-    return return_value
+    return_value: np.datetime64 = previous_change_timestamps[-1] + mean_time_to_change
+    return pd.to_datetime(return_value).date()
 
 
-class Predictor:
-    @staticmethod
-    def get_relevant_attributes():
-        return []
-
-    def fit(self, train_data: pd.DataFrame, last_day: datetime):
-        pass
+class Predictor(ABC):
 
     # def predict_day(self, data: pd.DataFrame, current_day: datetime):
     #     return False
@@ -183,32 +179,47 @@ class Predictor:
     # def predict_year(self, data: pd.DataFrame, current_day: datetime):
     #     return False
 
+    @abstractmethod
+    def fit(self, train_data: pd.DataFrame, last_day: datetime) -> None:
+        raise NotImplementedError()
+
+    @staticmethod
+    def get_relevant_attributes() -> List[str]:
+        raise NotImplementedError()
+
+    @abstractmethod
     def predict_timeframe(
         self, data: pd.DataFrame, current_day: datetime, timeframe: int
-    ):
-        return True
+    ) -> bool:
+        raise NotImplementedError()
 
-    def get_relevant_ids(self, identifier):
-        return [identifier]
+    @abstractmethod
+    def get_relevant_ids(self, identifier: str) -> List[str]:
+        raise NotImplementedError()
 
 
-class ZeroPredictor:
-    def predict_day(self, change_data, current_day):
+class ZeroPredictor(Predictor):
+    def fit(self, train_data: pd.DataFrame, last_day: datetime) -> None:
+        pass
+
+    def predict_timeframe(
+        self, data: pd.DataFrame, current_day: datetime, timeframe: int
+    ) -> bool:
         return False
 
-    def predict_week(self, change_data, current_day):
-        return self.predict_day(change_data, current_day)
+    def get_relevant_ids(self, identifier: str) -> List[str]:
+        return [identifier]
 
-    def predict_month(self, change_data, current_day):
-        return self.predict_day(change_data, current_day)
-
-    def predict_year(self, change_data, current_day):
-        return self.predict_day(change_data, current_day)
+    @staticmethod
+    def get_relevant_attributes() -> List[str]:
+        return []
 
 
 class DummyPredictor(ZeroPredictor):
-    def predict_day(self, change_data, current_day):
-        pred = next_change(change_data)
+    def predict_timeframe(
+        self, data: pd.DataFrame, current_day: datetime, timeframe: int
+    ) -> bool:
+        pred = next_change(data)
         if pred is None:
             return False
         return pred - current_day <= timedelta(1)
@@ -220,7 +231,7 @@ if __name__ == "__main__":
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
-    model = Predictor()
+    model = DummyPredictor()
     framework = TrainAndPredictFramework(model)
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
