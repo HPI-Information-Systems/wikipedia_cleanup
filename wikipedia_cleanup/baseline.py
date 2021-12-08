@@ -1,21 +1,24 @@
 from datetime import datetime, timedelta
-from typing import Optional
 from pathlib import Path
-
-import pandas as pd
-from sklearn.metrics import precision_recall_fscore_support
-from tqdm.auto import tqdm
+from typing import Optional
 
 import numpy as np
+import pandas as pd
+from line_profiler_pycharm import profile
+from sklearn.metrics import precision_recall_fscore_support
+from tqdm.auto import tqdm
 
 from wikipedia_cleanup.data_filter import KeepAttributesDataFilter
 from wikipedia_cleanup.data_processing import get_data
 
 
 class TrainAndPredictFramework:
-
-    def __init__(self, predictor: 'Predictor', test_start_date: datetime = datetime(2018, 9, 1),
-                 test_duration: int = 365):
+    def __init__(
+        self,
+        predictor: "Predictor",
+        test_start_date: datetime = datetime(2018, 9, 1),
+        test_duration: int = 365,
+    ):
         self.test_start_date = test_start_date
         self.test_duration = test_duration
         # total_time_window = timedelta(testset_duration)  # days
@@ -23,53 +26,87 @@ class TrainAndPredictFramework:
         # time_offset = timedelta(1)
 
         self.predictor = predictor
-        own_relevant_attributes = ['page_id', 'value_valid_from']  # 'infobox_key', 'property_name',
-        self.relevant_attributes = list(set(own_relevant_attributes + predictor.get_relevant_attributes()))
+        own_relevant_attributes = [
+            "page_id",
+            "value_valid_from",
+        ]  # 'infobox_key', 'property_name',
+        self.relevant_attributes = list(
+            set(own_relevant_attributes + predictor.get_relevant_attributes())
+        )
         self.data: pd.DataFrame = pd.DataFrame()
 
     def load_data(self, input_path: Path, n_files: int, n_jobs: int):
         filters = [KeepAttributesDataFilter(self.relevant_attributes)]
-        self.data = get_data(input_path, n_files=n_files, n_jobs=n_jobs, filters=filters)
-        self.data['value_valid_from'] = self.data['value_valid_from'].dt.tz_localize(None)
+        self.data = get_data(
+            input_path, n_files=n_files, n_jobs=n_jobs, filters=filters  # type: ignore
+        )
+        self.data["value_valid_from"] = self.data["value_valid_from"].dt.tz_localize(
+            None
+        )
 
     def fit_model(self):
-        train_data = self.data[self.data['value_valid_from'] < self.test_start_date]
+        train_data = self.data[self.data["value_valid_from"] < self.test_start_date]
         self.predictor.fit(train_data, self.test_start_date)
 
+    @profile
     def test_model(self):
-        page_ids = self.data['page_id'].unique()
-        # property_change_history = self.data.groupby(['page_id']).agg(list)
+        page_ids = self.data["page_id"].unique()
         all_day_labels = []
+        test_dates = [
+            (self.test_start_date + timedelta(days=x)).date()
+            for x in range(self.test_duration)
+        ]
 
         testing_timeframes = [1, 7, 30, 365]
-        timeframe_labels = ['day', 'week', 'month', 'year']
+        timeframe_labels = ["day", "week", "month", "year"]
         predictions = [[] for _ in testing_timeframes]
-        for page_id in tqdm(page_ids):
-            # for page_id, changes in tqdm(property_change_history.iteritems(), total=len(property_change_history)):
-            days_evaluated = 0
-            relevant_page_ids = self.predictor.get_relevant_ids(page_id)
-            current_data = self.data[self.data['page_id'].isin(relevant_page_ids)]
 
-            # changes = np.sort(changes)
-            # train_data_idx = np.searchsorted(changes, current_date, side="right")
+        for page_id in tqdm(page_ids):
+            days_evaluated = 0
+            train_data_idx = 0
             current_page_predictions = [[] for _ in testing_timeframes]
-            test_dates = pd.date_range(self.test_start_date, self.test_start_date + timedelta(days=self.test_duration))
-            day_labels = [date in self.data[self.data['page_id'] == page_id]['value_valid_from'] for date in test_dates]
-            train_input = current_data[current_data['value_valid_from'] < test_dates[0]]
+
+            relevant_page_ids = self.predictor.get_relevant_ids(page_id)
+            current_data = self.data[
+                self.data["page_id"].isin(relevant_page_ids)
+            ].sort_values(by=["value_valid_from"])
+            test_set_timestamps = current_data["value_valid_from"].dt.date.to_numpy()
+
+            current_page_id_timestamps = self.data[self.data["page_id"] == page_id][
+                "value_valid_from"
+            ].dt.date.to_numpy()
+            day_labels = [date in current_page_id_timestamps for date in test_dates]
             for current_date in test_dates:
                 # todo provide data of other page_ids for the current day.
+                if len(test_set_timestamps) > 0:
+                    offset = np.searchsorted(
+                        test_set_timestamps, current_date, side="left"
+                    )
+                    test_set_timestamps = test_set_timestamps[offset:]
+                    train_data_idx += offset
+                    train_input = current_data.iloc[:train_data_idx]
+
                 for i, timeframe in enumerate(testing_timeframes):
                     if days_evaluated % timeframe == 0:
                         current_page_predictions[i].append(
-                            self.predictor.predict_timeframe(train_input, current_date, timeframe))
+                            self.predictor.predict_timeframe(
+                                train_input, current_date, timeframe
+                            )
+                        )
                 days_evaluated += 1
+
             for i, prediction in enumerate(current_page_predictions):
                 predictions[i].append(prediction)
             all_day_labels.append(day_labels)
-        predictions = [np.array(prediction, dtype=np.bool) for prediction in predictions]
 
+        predictions = [
+            np.array(prediction, dtype=np.bool) for prediction in predictions
+        ]
         all_day_labels = np.array(all_day_labels, dtype=np.bool)
-        labels = [self.aggregate_labels(all_day_labels, timeframe) for timeframe in testing_timeframes]
+        labels = [
+            self.aggregate_labels(all_day_labels, timeframe)
+            for timeframe in testing_timeframes
+        ]
 
         prediction_stats = []
         for y_true, y_hat, title in zip(labels, predictions, timeframe_labels):
@@ -88,15 +125,25 @@ class TrainAndPredictFramework:
 
     @staticmethod
     def print_stats(pre_rec_f1_stat, title):
+        percent_data = pre_rec_f1_stat[3][1] / (
+            pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
+        )
         print(f"{title} \t\t changes \t no changes")
-        print(f"Precision:\t\t {pre_rec_f1_stat[0][1]:.4} \t\t {pre_rec_f1_stat[0][0]:.4}")
-        print(f"Recall:\t\t\t {pre_rec_f1_stat[1][1]:.4} \t\t {pre_rec_f1_stat[1][0]:.4}")
-        print(f"F1score:\t\t {pre_rec_f1_stat[2][1]:.4} \t\t {pre_rec_f1_stat[2][0]:.4}")
         print(
-            f"Percent of Data:\t {pre_rec_f1_stat[3][1] / (pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]):.4}, \tTotal: {pre_rec_f1_stat[3][1]}")
+            f"Precision:\t\t {pre_rec_f1_stat[0][1]:.4} \t\t {pre_rec_f1_stat[0][0]:.4}"
+        )
+        print(
+            f"Recall:\t\t\t {pre_rec_f1_stat[1][1]:.4} \t\t {pre_rec_f1_stat[1][0]:.4}"
+        )
+        print(
+            f"F1score:\t\t {pre_rec_f1_stat[2][1]:.4} \t\t {pre_rec_f1_stat[2][0]:.4}"
+        )
+        print(f"Percent of Data:\t {percent_data:.4}, \tTotal: {pre_rec_f1_stat[3][1]}")
         print()
 
-    def evaluate_prediction(self, labels: np.ndarray, prediction: np.ndarray, title: str):
+    def evaluate_prediction(
+        self, labels: np.ndarray, prediction: np.ndarray, title: str
+    ):
         stats = precision_recall_fscore_support(labels.flatten(), prediction.flatten())
         self.print_stats(stats, title)
         return stats
@@ -136,8 +183,45 @@ class Predictor:
     # def predict_year(self, data: pd.DataFrame, current_day: datetime):
     #     return False
 
-    def predict_timeframe(self, data: pd.DataFrame, current_day: datetime, timeframe: int):
+    def predict_timeframe(
+        self, data: pd.DataFrame, current_day: datetime, timeframe: int
+    ):
         return True
 
     def get_relevant_ids(self, identifier):
         return [identifier]
+
+
+class ZeroPredictor:
+    def predict_day(self, change_data, current_day):
+        return False
+
+    def predict_week(self, change_data, current_day):
+        return self.predict_day(change_data, current_day)
+
+    def predict_month(self, change_data, current_day):
+        return self.predict_day(change_data, current_day)
+
+    def predict_year(self, change_data, current_day):
+        return self.predict_day(change_data, current_day)
+
+
+class DummyPredictor(ZeroPredictor):
+    def predict_day(self, change_data, current_day):
+        pred = next_change(change_data)
+        if pred is None:
+            return False
+        return pred - current_day <= timedelta(1)
+
+
+if __name__ == "__main__":
+    n_files = 8
+    n_jobs = 4
+    input_path = Path(
+        "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
+    )
+    model = Predictor()
+    framework = TrainAndPredictFramework(model)
+    framework.load_data(input_path, n_files, n_jobs)
+    framework.fit_model()
+    framework.test_model()
