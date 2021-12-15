@@ -1,22 +1,25 @@
-from abc import ABC, abstractmethod
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 import numpy as np
 import pandas as pd
-from line_profiler_pycharm import profile
 from sklearn.metrics import precision_recall_fscore_support
 from tqdm.auto import tqdm
 
-from wikipedia_cleanup.data_filter import KeepAttributesDataFilter
+from wikipedia_cleanup.data_filter import (
+    KeepAttributesDataFilter,
+    OnlyUpdatesDataFilter,
+)
 from wikipedia_cleanup.data_processing import get_data
+from wikipedia_cleanup.predictor import Predictor
+from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
 
 
 class TrainAndPredictFramework:
     def __init__(
         self,
-        predictor: "Predictor",
+        predictor: Predictor,
         group_key: List[str],
         test_start_date: datetime = datetime(2018, 9, 1),
         test_duration: int = 365,
@@ -40,7 +43,10 @@ class TrainAndPredictFramework:
         self.data: pd.DataFrame = pd.DataFrame()
 
     def load_data(self, input_path: Path, n_files: int, n_jobs: int):
-        filters = [KeepAttributesDataFilter(self.relevant_attributes)]
+        filters = [
+            OnlyUpdatesDataFilter(),
+            KeepAttributesDataFilter(self.relevant_attributes),
+        ]
         self.data = get_data(
             input_path, n_files=n_files, n_jobs=n_jobs, filters=filters  # type: ignore
         )
@@ -53,9 +59,8 @@ class TrainAndPredictFramework:
 
     def fit_model(self):
         train_data = self.data[self.data["value_valid_from"] < self.test_start_date]
-        self.predictor.fit(train_data, self.test_start_date)
+        self.predictor.fit(train_data.copy(), self.test_start_date)
 
-    @profile
     def test_model(self):
         page_ids = self.data["key"].unique()
         all_day_labels = []
@@ -160,85 +165,13 @@ class TrainAndPredictFramework:
         pass
 
 
-def next_change(time_series: pd.DataFrame) -> Optional[date]:
-    previous_change_timestamps = time_series["value_valid_from"].to_numpy()
-    if len(previous_change_timestamps) < 2:
-        return None
-
-    mean_time_to_change: np.timedelta64 = np.mean(
-        previous_change_timestamps[1:] - previous_change_timestamps[0:-1]
-    )
-    return_value: np.datetime64 = previous_change_timestamps[-1] + mean_time_to_change
-    return pd.to_datetime(return_value).date()
-
-
-class Predictor(ABC):
-
-    # def predict_day(self, data: pd.DataFrame, current_day: datetime):
-    #     return False
-    #
-    # def predict_week(self, data: pd.DataFrame, current_day: datetime):
-    #     return False
-    #
-    # def predict_month(self, data: pd.DataFrame, current_day: datetime):
-    #     return False
-    #
-    # def predict_year(self, data: pd.DataFrame, current_day: datetime):
-    #     return False
-
-    @abstractmethod
-    def fit(self, train_data: pd.DataFrame, last_day: datetime) -> None:
-        raise NotImplementedError()
-
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def predict_timeframe(
-        self, data: pd.DataFrame, current_day: date, timeframe: int
-    ) -> bool:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def get_relevant_ids(self, identifier: str) -> List[str]:
-        raise NotImplementedError()
-
-
-class ZeroPredictor(Predictor):
-    def fit(self, train_data: pd.DataFrame, last_day: datetime) -> None:
-        pass
-
-    def predict_timeframe(
-        self, data: pd.DataFrame, current_day: date, timeframe: int
-    ) -> bool:
-        return False
-
-    def get_relevant_ids(self, identifier: str) -> List[str]:
-        return [identifier]
-
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
-        return []
-
-
-class DummyPredictor(ZeroPredictor):
-    def predict_timeframe(
-        self, data: pd.DataFrame, current_day: date, timeframe: int
-    ) -> bool:
-        pred = next_change(data)
-        if pred is None:
-            return False
-        return pred - current_day <= timedelta(1)
-
-
 if __name__ == "__main__":
-    n_files = 1
-    n_jobs = 4
+    n_files = 40
+    n_jobs = 8
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
-    model = DummyPredictor()
+    model = PropertyCorrelationPredictor()
     # framework = TrainAndPredictFramework(model, ['infobox_key', 'property_name'])
     framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
