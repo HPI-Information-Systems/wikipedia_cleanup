@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from wikipedia_cleanup.data_filter import (
@@ -151,7 +151,7 @@ def get_data(
         all_changes = []
         mapped_filters = []
         for file, data_filters in tqdm(
-            zip(files, [deepcopy(filters) for _ in range(len(files))])
+            zip(files, [deepcopy(filters) for _ in range(len(files))]), total=len(files)
         ):
             changes_and_filters = read_and_filter_file(file, data_filters)
             all_changes.append(changes_and_filters[0])
