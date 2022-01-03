@@ -126,6 +126,24 @@ class MinNumChangesDataFilter(AbstractDataFilter):
         return [] if len(changes) < self._min_number_of_changes else changes
 
 
+class OnlyUpdatesDataFilter(AbstractDataFilter):
+    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        raise NotImplementedError("This method should never be called.")
+
+    def filter(
+        self, changes: List[InfoboxChange], initial_num_changes: int
+    ) -> List[InfoboxChange]:
+        self._filter_stats.initial_num_changes = initial_num_changes
+        self._filter_stats.input_num_changes = len(changes)
+        filtered_changes = [
+            change
+            for change in changes
+            if change.previous_value and change.previous_value
+        ]
+        self._filter_stats.output_num_changes = len(filtered_changes)
+        return filtered_changes
+
+
 class MajorityValuePerDayDataFilter(AbstractDataFilter):
     """
     This filter needs to process each tuple (infobox, property_name, day).
