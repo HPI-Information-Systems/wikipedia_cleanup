@@ -104,14 +104,14 @@ class TrainAndPredictFramework:
                     train_input_key = current_data.iloc[:offset]
 
                 for i, timeframe in enumerate(testing_timeframes):
-                    if len(test_set_timestamps) > 0:
-                        offset = np.searchsorted(
-                            test_set_timestamps,
-                            current_date + timedelta(days=timeframe),
-                            side="left",
-                        )
-                        train_input = current_data.iloc[:offset]
                     if days_evaluated % timeframe == 0:
+                        if len(test_set_timestamps) > 0:
+                            offset = np.searchsorted(
+                                test_set_timestamps,
+                                current_date + timedelta(days=timeframe),
+                                side="left",
+                            )
+                            train_input = current_data.iloc[:offset]
                         current_page_predictions[i].append(
                             self.predictor.predict_timeframe(
                                 train_input_key, train_input, current_date, timeframe
