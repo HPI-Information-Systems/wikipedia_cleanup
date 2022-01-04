@@ -73,43 +73,50 @@ class TrainAndPredictFramework:
         timeframe_labels = ["day", "week", "month", "year"]
         predictions = [[] for _ in testing_timeframes]
 
-        for page_id in tqdm(page_ids[:200]):
-            days_evaluated = 0
-            train_data_idx = 0
+        for page_id in tqdm(page_ids):
             current_page_predictions = [[] for _ in testing_timeframes]
 
-            relevant_page_ids = self.predictor.get_relevant_ids(page_id)
+            relevant_page_ids = self.predictor.get_relevant_ids(page_id).copy()
+
+            current_data_key = self.data[self.data["key"] == page_id].sort_values(
+                by=["value_valid_from"]
+            )
+            relevant_page_ids = list(filter((page_id).__ne__, relevant_page_ids))
             current_data = self.data[
                 self.data["key"].isin(relevant_page_ids)
             ].sort_values(by=["value_valid_from"])
-            test_set_timestamps = current_data["value_valid_from"].dt.date.to_numpy()
 
-            # If the current page id is in the relevant_page_ids, this can probably be
-            # sped up by looking at current_data
-            current_page_id_timestamps = self.data[self.data["key"] == page_id][
+            test_set_timestamps = current_data["value_valid_from"].dt.date.to_numpy()
+            test_set_timestamps_key = current_data_key[
                 "value_valid_from"
             ].dt.date.to_numpy()
-            day_labels = [date in current_page_id_timestamps for date in test_dates]
+
+            day_labels = [date in test_set_timestamps_key for date in test_dates]
             # empty dataframe with same columns
             train_input = current_data.iloc[:0]
-            for current_date in test_dates:
-                # todo provide data of other page_ids for the current day.
-                if len(test_set_timestamps) > 0:
+            train_input_key = current_data_key.iloc[:0]
+
+            for days_evaluated, current_date in enumerate(test_dates):
+                if len(test_set_timestamps_key) > 0:
                     offset = np.searchsorted(
-                        test_set_timestamps, current_date, side="left"
+                        test_set_timestamps_key, current_date, side="left"
                     )
-                    test_set_timestamps = test_set_timestamps[offset:]
-                    train_data_idx += offset
-                    train_input = current_data.iloc[:train_data_idx]
+                    train_input_key = current_data.iloc[:offset]
 
                 for i, timeframe in enumerate(testing_timeframes):
+                    if len(test_set_timestamps) > 0:
+                        offset = np.searchsorted(
+                            test_set_timestamps,
+                            current_date + timedelta(days=timeframe),
+                            side="left",
+                        )
+                        train_input = current_data.iloc[:offset]
                     if days_evaluated % timeframe == 0:
                         current_page_predictions[i].append(
                             self.predictor.predict_timeframe(
-                                train_input, current_date, timeframe
+                                train_input_key, train_input, current_date, timeframe
                             )
                         )
-                days_evaluated += 1
 
             for i, prediction in enumerate(current_page_predictions):
                 predictions[i].append(prediction)
@@ -123,6 +130,8 @@ class TrainAndPredictFramework:
             self.aggregate_labels(all_day_labels, timeframe)
             for timeframe in testing_timeframes
         ]
+        self.labels = labels
+        self.predictions = predictions
 
         prediction_stats = []
         for y_true, y_hat, title in zip(labels, predictions, timeframe_labels):
@@ -133,11 +142,11 @@ class TrainAndPredictFramework:
         if n == 1:
             return labels
         if self.test_duration % n != 0:
-            padded_labels = np.pad(labels, ((0, 0), (0, n - self.test_duration % n)))
+            padded_labels = np.pad(labels, ((0, 0), (0, (n - self.test_duration) % n)))
         else:
             padded_labels = labels
-        padded_labels = padded_labels.reshape((-1, n, labels.shape[0]))
-        return np.any(padded_labels, axis=1).reshape(labels.shape[0], -1)
+        padded_labels = padded_labels.reshape(labels.shape[0], -1, n)
+        return np.any(padded_labels, axis=2)
 
     @staticmethod
     def print_stats(pre_rec_f1_stat, title):

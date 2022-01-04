@@ -7,7 +7,6 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-from line_profiler_pycharm import profile
 from scipy.sparse import csr_matrix, vstack
 from sklearn.neighbors import NearestNeighbors
 from tqdm.auto import tqdm
@@ -19,7 +18,8 @@ class PropertyCorrelationPredictor(Predictor):
     def __init__(self, allowed_change_delay: int = 3, use_cache: bool = True) -> None:
         # TODO justify the 3 here
         self.DELAY_RANGE = allowed_change_delay
-        self.related_properties_lookup = {}
+        self.related_properties_lookup: dict = {}
+        self.MAX_PROPERTY_FROM_LINKS = 15
         self.use_hash = use_cache
         self.hash_location = Path("")
         super().__init__()
@@ -95,7 +95,7 @@ class PropertyCorrelationPredictor(Predictor):
                     return
                 else:
                     print("No cache found, recalculating model.")
-            except:
+            except EOFError:
                 print("Caching failed, recalculating model.")
 
         related_page_index = self._get_links(train_data)
@@ -163,40 +163,41 @@ class PropertyCorrelationPredictor(Predictor):
 
         max_dist = 0.05
 
-        @profile
-        def hihi():
-            same_infoboxes = []
-            matches = {}
-            for key, row in tqdm(page_id_groups.iterrows(), total=len(page_id_groups)):
-                if len(row[1]) > 1:
-                    for related_key, related_row in page_id_groups.loc[
-                        filtered_related_page_index[key]
-                    ].iterrows():
+        same_infoboxes = []
+        matches = {}
+        for key, row in tqdm(page_id_groups.iterrows(), total=len(page_id_groups)):
+            if len(row[1]) > 1:
+                related_items = page_id_groups.loc[filtered_related_page_index[key]]
+                num_samples_from_links = 0
+                for _, related_row in related_items.iterrows():
+                    num_samples_from_links += len(related_row[0])
+                    if num_samples_from_links > self.MAX_PROPERTY_FROM_LINKS:
+                        break
+                if num_samples_from_links <= self.MAX_PROPERTY_FROM_LINKS:
+                    for _, related_row in related_items.iterrows():
                         row[0].extend(related_row[0])
                         row[1].extend(related_row[1])
                         row[2].extend(related_row[2])
-                    # TODO cap the number of entities that we add to a page to 50 total entities or 50 entities that get linked?
-                    input_data = vstack(row[1])
-                    neigh = NearestNeighbors(
-                        radius=max_dist,
-                        metric=percentage_manhatten_adaptive_time_lag_symmetric,
-                    )
-                    neigh.fit(input_data)
-                    neighbor_indices = neigh.radius_neighbors(return_distance=False)
-                    for i, neighbors in enumerate(neighbor_indices):
-                        infobox = row[2][i]
-                        if len(neighbors) > 0:
-                            infobox_keys = np.array(row[2])[neighbors]
-                            same_infobox = infobox_keys == infobox
-                            same_infoboxes.append(same_infobox)
+                input_data = vstack(row[1])
+                neigh = NearestNeighbors(
+                    radius=max_dist,
+                    metric=percentage_manhatten_adaptive_time_lag_symmetric,
+                )
+                neigh.fit(input_data)
+                neighbor_indices = neigh.radius_neighbors(return_distance=False)
+                for i, neighbors in enumerate(neighbor_indices):
+                    infobox = row[2][i]
+                    if len(neighbors) > 0:
+                        infobox_keys = np.array(row[2])[neighbors]
+                        same_infobox = infobox_keys == infobox
+                        same_infoboxes.append(same_infobox)
 
-                            property_names = np.array(row[0])[neighbors]
-                            match = list(zip(infobox_keys, property_names))
-                            match.append((infobox, row[0][i]))
-                            matches[(infobox, row[0][i])] = match
-            return matches
+                        property_names = np.array(row[0])[neighbors]
+                        match = list(zip(infobox_keys, property_names))
+                        match.append((infobox, row[0][i]))
+                        matches[(infobox, row[0][i])] = match
 
-        self.related_properties_lookup = hihi()
+        self.related_properties_lookup = matches
         if self.use_hash:
             with open(possible_cached_mapping, "wb") as f:
                 pickle.dump(self.related_properties_lookup, f)
@@ -213,23 +214,26 @@ class PropertyCorrelationPredictor(Predictor):
         ]
 
     def predict_timeframe(
-        self, data: pd.DataFrame, current_day: date, timeframe: int
+        self,
+        data_key: pd.DataFrame,
+        additional_data: pd.DataFrame,
+        current_day: date,
+        timeframe: int,
     ) -> bool:
         # pass in which data point we are supposed to predict
-        unique = data["property_name"].nunique()
-        if unique > 2:
-            print(unique)
-        # print(data['property_name'].nunique())
-        self.test = (data, current_day, timeframe)
 
-        return True
+        # We can't really deal with daily predictions
+        #  or timeframes that are less than the self.DELAY_RANGE
 
-        # We can't really deal with daily predictions or timeframes that are less than the self.DELAY_RANGE
-
-        # Check how many changes/ any changes we have inside the (timeframe - delay range) area. If yes, return true, else false
-        # Maybe decrease the delay range here or see how many related properties have changes here to increase precision, has to be tested
-        self.test = (data, current_day, timeframe)
-        future_data = data[data["value_valid_from"] > np.datetime64(current_day)]
+        # Check how many changes/ any changes we have inside the
+        # (timeframe - delay range) area. If yes, return true, else false
+        # Maybe decrease the delay range here or see how many related
+        #  properties have changes here to increase precision, has to be tested
+        if additional_data.empty:
+            return False
+        future_data = additional_data[
+            additional_data["value_valid_from"] > np.datetime64(current_day)
+        ]
         return len(future_data) != 0
 
     def get_relevant_ids(self, identifier: str) -> List[str]:

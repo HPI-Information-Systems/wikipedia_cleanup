@@ -30,7 +30,11 @@ class Predictor(ABC):
 
     @abstractmethod
     def predict_timeframe(
-        self, data: pd.DataFrame, current_day: date, timeframe: int
+        self,
+        data_key: pd.DataFrame,
+        additional_data: pd.DataFrame,
+        current_day: date,
+        timeframe: int,
     ) -> bool:
         raise NotImplementedError()
 
@@ -44,7 +48,11 @@ class ZeroPredictor(Predictor):
         pass
 
     def predict_timeframe(
-        self, data: pd.DataFrame, current_day: date, timeframe: int
+        self,
+        data_key: pd.DataFrame,
+        additional_data: pd.DataFrame,
+        current_day: date,
+        timeframe: int,
     ) -> bool:
         return False
 
@@ -58,9 +66,13 @@ class ZeroPredictor(Predictor):
 
 class DummyPredictor(ZeroPredictor):
     def predict_timeframe(
-        self, data: pd.DataFrame, current_day: date, timeframe: int
+        self,
+        data_key: pd.DataFrame,
+        additional_data: pd.DataFrame,
+        current_day: date,
+        timeframe: int,
     ) -> bool:
-        pred = self.next_change(data)
+        pred = self.next_change(data_key)
         if pred is None:
             return False
         return pred - current_day <= timedelta(1)
