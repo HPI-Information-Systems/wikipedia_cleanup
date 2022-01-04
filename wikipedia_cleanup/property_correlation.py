@@ -13,6 +13,12 @@ from wikipedia_cleanup.predictor import Predictor
 
 
 class PropertyCorrelationPredictor(Predictor):
+
+    def __init__(self, allowed_change_delay: int = 3) -> None:
+        #TODO justify the 3 here
+        self.DELAY_RANGE = allowed_change_delay
+        super().__init__()
+
     @staticmethod
     def _get_links(train_data: pd.DataFrame):
         regex_str = '\\[\\[((?:\\w+:)?[^<>\\[\\]"\\|]+)(?:\\|[^\\n\\]]+)?\\]\\]'
@@ -67,8 +73,6 @@ class PropertyCorrelationPredictor(Predictor):
         related_page_index = self._get_links(train_data)
 
         def percentage_manhatten_adaptive_time_lag(arr1, arr2):
-            DELAY_RANGE = 3
-
             arr1 = arr1.toarray()
             arr2 = arr2.toarray()
             max_changes = arr1.sum()
@@ -78,7 +82,7 @@ class PropertyCorrelationPredictor(Predictor):
             for idx in mask[1]:
                 needed_num_changes = arr1[0, idx]
                 for off in range(
-                    -min(DELAY_RANGE, idx), min(DELAY_RANGE, arr2.shape[1] - idx)
+                    -min(self.DELAY_RANGE, idx), min(self.DELAY_RANGE, arr2.shape[1] - idx)
                 ):
                     used_changes = min(needed_num_changes, arr2[0, idx + off])
                     arr2[0, idx + off] -= used_changes
@@ -133,7 +137,7 @@ class PropertyCorrelationPredictor(Predictor):
         @profile
         def hihi():
             same_infoboxes = []
-            matches = []
+            matches = {}
             for key, row in tqdm(page_id_groups.iterrows(), total=len(page_id_groups)):
                 if len(row[1]) > 1:
                     for related_key, related_row in page_id_groups.loc[
@@ -142,6 +146,7 @@ class PropertyCorrelationPredictor(Predictor):
                         row[0].extend(related_row[0])
                         row[1].extend(related_row[1])
                         row[2].extend(related_row[2])
+                    # TODO cap the number of entities that we add to a page to 50 total entities or 50 entities that get linked?
                     input_data = vstack(row[1])
                     neigh = NearestNeighbors(
                         radius=max_dist,
@@ -159,9 +164,10 @@ class PropertyCorrelationPredictor(Predictor):
                             property_names = np.array(row[0])[neighbors]
                             match = list(zip(infobox_keys, property_names))
                             match.append((infobox, row[0][i]))
-                            matches.append(match)
+                            matches[(infobox, row[0][i])] = match
+            return matches
 
-        hihi()
+        self.related_properties_lookup = hihi()
 
     @staticmethod
     def get_relevant_attributes() -> List[str]:
@@ -177,7 +183,19 @@ class PropertyCorrelationPredictor(Predictor):
     def predict_timeframe(
         self, data: pd.DataFrame, current_day: date, timeframe: int
     ) -> bool:
-        raise NotImplementedError()
+        # pass in which data point we are supposed to predict
+
+        # We can't really deal with daily predictions or timeframes that are less than the self.DELAY_RANGE
+
+        # Check how many changes/ any changes we have inside the (timeframe - delay range) area. If yes, return true, else false
+        # Maybe decrease the delay range here or see how many related properties have changes here to increase precision, has to be tested
+        self.test = (data, current_day, timeframe)
+        future_data = data[data["value_valid_from"] > np.datetime64(current_day)]
+        return len(future_data) != 0
+            
+
 
     def get_relevant_ids(self, identifier: str) -> List[str]:
-        raise NotImplementedError()
+        if identifier not in self.related_properties_lookup.keys():
+            return [identifier]
+        return self.related_properties_lookup[identifier]
