@@ -84,10 +84,13 @@ class TrainAndPredictFramework:
             ].sort_values(by=["value_valid_from"])
             test_set_timestamps = current_data["value_valid_from"].dt.date.to_numpy()
 
+            # If the current page id is in the relevant_page_ids, this can probably be
+            # sped up by looking at current_data
             current_page_id_timestamps = self.data[self.data["key"] == page_id][
                 "value_valid_from"
             ].dt.date.to_numpy()
             day_labels = [date in current_page_id_timestamps for date in test_dates]
+            # empty dataframe with same columns
             train_input = current_data.iloc[:0]
             for current_date in test_dates:
                 # todo provide data of other page_ids for the current day.

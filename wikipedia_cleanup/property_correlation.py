@@ -1,5 +1,8 @@
+import hashlib
+import pickle
 import re
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import List
 
 import numpy as np
@@ -13,10 +16,12 @@ from wikipedia_cleanup.predictor import Predictor
 
 
 class PropertyCorrelationPredictor(Predictor):
-
-    def __init__(self, allowed_change_delay: int = 3) -> None:
-        #TODO justify the 3 here
+    def __init__(self, allowed_change_delay: int = 3, use_cache: bool = True) -> None:
+        # TODO justify the 3 here
         self.DELAY_RANGE = allowed_change_delay
+        self.related_properties_lookup = {}
+        self.use_hash = use_cache
+        self.hash_location = Path("")
         super().__init__()
 
     @staticmethod
@@ -68,7 +73,30 @@ class PropertyCorrelationPredictor(Predictor):
         )
         return min_support_groups
 
+    @staticmethod
+    def calculate_hash(data: pd.DataFrame) -> str:
+        hash_string = "".join(str(x) for x in [data.shape, data.head(2), data.tail(2)])
+        hash_id = hashlib.md5(hash_string.encode("utf-8")).hexdigest()[:10]
+        return hash_id
+
     def fit(self, train_data: pd.DataFrame, last_day: datetime) -> None:
+        if self.use_hash:
+            try:
+                hash_string = "".join(
+                    str(x)
+                    for x in [train_data.shape, train_data.head(2), train_data.tail(2)]
+                )
+                hash_id = hashlib.md5(hash_string.encode("utf-8")).hexdigest()[:10]
+                possible_cached_mapping = self.hash_location / hash_id
+                if (possible_cached_mapping).exists():
+                    print(f"Cached model found, loading from {possible_cached_mapping}")
+                    with open(possible_cached_mapping, "rb") as f:
+                        self.related_properties_lookup = pickle.load(f)
+                    return
+                else:
+                    print("No cache found, recalculating model.")
+            except:
+                print("Caching failed, recalculating model.")
 
         related_page_index = self._get_links(train_data)
 
@@ -82,7 +110,8 @@ class PropertyCorrelationPredictor(Predictor):
             for idx in mask[1]:
                 needed_num_changes = arr1[0, idx]
                 for off in range(
-                    -min(self.DELAY_RANGE, idx), min(self.DELAY_RANGE, arr2.shape[1] - idx)
+                    -min(self.DELAY_RANGE, idx),
+                    min(self.DELAY_RANGE, arr2.shape[1] - idx),
                 ):
                     used_changes = min(needed_num_changes, arr2[0, idx + off])
                     arr2[0, idx + off] -= used_changes
@@ -168,6 +197,9 @@ class PropertyCorrelationPredictor(Predictor):
             return matches
 
         self.related_properties_lookup = hihi()
+        if self.use_hash:
+            with open(possible_cached_mapping, "wb") as f:
+                pickle.dump(self.related_properties_lookup, f)
 
     @staticmethod
     def get_relevant_attributes() -> List[str]:
@@ -184,6 +216,13 @@ class PropertyCorrelationPredictor(Predictor):
         self, data: pd.DataFrame, current_day: date, timeframe: int
     ) -> bool:
         # pass in which data point we are supposed to predict
+        unique = data["property_name"].nunique()
+        if unique > 2:
+            print(unique)
+        # print(data['property_name'].nunique())
+        self.test = (data, current_day, timeframe)
+
+        return True
 
         # We can't really deal with daily predictions or timeframes that are less than the self.DELAY_RANGE
 
@@ -192,8 +231,6 @@ class PropertyCorrelationPredictor(Predictor):
         self.test = (data, current_day, timeframe)
         future_data = data[data["value_valid_from"] > np.datetime64(current_day)]
         return len(future_data) != 0
-            
-
 
     def get_relevant_ids(self, identifier: str) -> List[str]:
         if identifier not in self.related_properties_lookup.keys():
