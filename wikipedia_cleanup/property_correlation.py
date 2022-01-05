@@ -89,6 +89,7 @@ class PropertyCorrelationPredictor(Predictor):
         return False
 
     def fit(self, train_data: pd.DataFrame, last_day: datetime) -> None:
+        keys: List[str] = ["page_id"]
         if self.use_hash:
             possible_cached_mapping = self._calculate_cache_name(train_data)
             if self._load_cache(possible_cached_mapping):
@@ -129,7 +130,7 @@ class PropertyCorrelationPredictor(Predictor):
 
         page_title_groups = min_support_groups.reset_index()
         page_title_groups = page_title_groups.groupby(["page_title"])[
-            ["property_name", "bin_idx", "infobox_key"]
+            ["property_name", "bin_idx", "infobox_key"] + keys
         ].agg(list)
 
         links = self._find_working_links(min_support_groups, related_page_index)
@@ -139,39 +140,39 @@ class PropertyCorrelationPredictor(Predictor):
 
         same_infoboxes = []
         matches = {}
-        for key, row in tqdm(
-            page_title_groups.iterrows(), total=len(page_title_groups)
-        ):
-            if len(row[1]) > 1:
-                related_items = page_title_groups.loc[page_to_related_pages[key]]
-                num_samples_from_links = 0
-                for _, related_row in related_items.iterrows():
-                    num_samples_from_links += len(related_row[0])
-                    if num_samples_from_links > self.MAX_PROPERTY_FROM_LINKS:
-                        break
-                if num_samples_from_links <= self.MAX_PROPERTY_FROM_LINKS:
-                    for _, related_row in related_items.iterrows():
-                        row[0].extend(related_row[0])
-                        row[1].extend(related_row[1])
-                        row[2].extend(related_row[2])
-                input_data = vstack(row[1])
-                neigh = NearestNeighbors(
-                    radius=self.PERCENT_ALLOWED_MISMATCHES,
-                    metric=percentage_manhatten_adaptive_time_lag_symmetric,
-                )
-                neigh.fit(input_data)
-                neighbor_indices = neigh.radius_neighbors(return_distance=False)
-                for i, neighbors in enumerate(neighbor_indices):
-                    infobox = row[2][i]
-                    if len(neighbors) > 0:
-                        infobox_keys = np.array(row[2])[neighbors]
-                        same_infobox = infobox_keys == infobox
-                        same_infoboxes.append(same_infobox)
+        for row in tqdm(page_title_groups.itertuples(), total=len(page_title_groups)):
+            if len(row.property_name) == 0:
+                break
 
-                        property_names = np.array(row[0])[neighbors]
-                        match = list(zip(infobox_keys, property_names))
-                        match.append((infobox, row[0][i]))
-                        matches[(infobox, row[0][i])] = match
+            related_items = page_title_groups.loc[page_to_related_pages[row.Index]]
+            num_samples_from_links = 0
+            for related_row in related_items.itertuples():
+                num_samples_from_links += len(related_row.property_name)
+                if num_samples_from_links > self.MAX_PROPERTY_FROM_LINKS:
+                    break
+            if num_samples_from_links <= self.MAX_PROPERTY_FROM_LINKS:
+                for related_row in related_items.itertuples():
+                    row.property_name.extend(related_row.property_name)
+                    row.bin_idx.extend(related_row.bin_idx)
+                    row.infobox_key.extend(related_row.infobox_key)
+            input_data = vstack(row.bin_idx)
+            neigh = NearestNeighbors(
+                radius=self.PERCENT_ALLOWED_MISMATCHES,
+                metric=percentage_manhatten_adaptive_time_lag_symmetric,
+            )
+            neigh.fit(input_data)
+            neighbor_indices = neigh.radius_neighbors(return_distance=False)
+            for i, neighbors in enumerate(neighbor_indices):
+                infobox = row.infobox_key[i]
+                if len(neighbors) > 0:
+                    infobox_keys = np.array(row.infobox_key)[neighbors]
+                    same_infobox = infobox_keys == infobox
+                    same_infoboxes.append(same_infobox)
+
+                    property_names = np.array(row.property_name)[neighbors]
+                    match = list(zip(infobox_keys, property_names))
+                    match.append((infobox, row.property_name[i]))
+                    matches[(infobox, row.property_name[i])] = match
 
         self.related_properties_lookup = matches
         if self.use_hash:

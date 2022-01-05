@@ -70,7 +70,7 @@ class TrainAndPredictFramework:
             for x in range(self.test_duration)
         ]
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
-        for key in tqdm(keys):
+        for key in tqdm(keys[:2000]):
             current_data, additional_current_data = self.select_current_data(key)
 
             timestamps = self.convert_timestamps(current_data)
@@ -205,14 +205,14 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 40
-    n_jobs = 8
+    n_files = 4
+    n_jobs = 4
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
     model = PropertyCorrelationPredictor()
-    # framework = TrainAndPredictFramework(model, ['infobox_key', 'property_name'])
-    framework = TrainAndPredictFramework(model, ["page_id"])
+    framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
+    # framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
     framework.test_model()
