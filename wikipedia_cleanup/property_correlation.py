@@ -3,7 +3,7 @@ import pickle
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -16,16 +16,18 @@ from wikipedia_cleanup.predictor import Predictor
 
 class PropertyCorrelationPredictor(Predictor):
     def __init__(self, allowed_change_delay: int = 3, use_cache: bool = True) -> None:
-        # TODO justify the 3 here
-        self.DELAY_RANGE = allowed_change_delay
-        self.related_properties_lookup: dict = {}
-        self.MAX_PROPERTY_FROM_LINKS = 15
-        self.use_hash = use_cache
-        self.hash_location = Path("cache") / self.__class__.__name__
         super().__init__()
+        self.related_properties_lookup: dict = {}
+        self.hash_location = Path("cache") / self.__class__.__name__
+
+        self.use_hash = use_cache
+        # TODO justify the 3 here
+        self.delay_range = allowed_change_delay
+        self.MAX_PROPERTY_FROM_LINKS = 15  # Set via boxplot whisker for symmetric links
+        self.PERCENT_ALLOWED_MISMATCHES = 0.05
 
     @staticmethod
-    def _get_links(train_data: pd.DataFrame):
+    def _get_links(train_data: pd.DataFrame) -> Dict[str, List[str]]:
         regex_str = '\\[\\[((?:\\w+:)?[^<>\\[\\]"\\|]+)(?:\\|[^\\n\\]]+)?\\]\\]'
         regex = re.compile(regex_str)
 
@@ -47,14 +49,14 @@ class PropertyCorrelationPredictor(Predictor):
         return related_page_index
 
     @staticmethod
-    def _create_time_series(a, duration):
+    def _create_time_series(a: Any, duration: int) -> csr_matrix:
         series = np.zeros(duration)
         uniques, counts = np.unique(a, return_counts=True)
         series[uniques] = counts
         return csr_matrix(series)
 
     @staticmethod
-    def _sparse_time_series_conversion(train_data: pd.DataFrame):
+    def _sparse_time_series_conversion(train_data: pd.DataFrame) -> pd.Series:
         bins = pd.date_range(
             train_data["value_valid_from"].min().date(),
             train_data["value_valid_from"].max().date() + timedelta(1),
@@ -73,45 +75,39 @@ class PropertyCorrelationPredictor(Predictor):
         )
         return min_support_groups
 
-    @staticmethod
-    def calculate_hash(data: pd.DataFrame) -> str:
-        hash_string = "".join(str(x) for x in [data.shape, data.head(2), data.tail(2)])
-        hash_id = hashlib.md5(hash_string.encode("utf-8")).hexdigest()[:10]
-        return hash_id
+    def _load_cache(self, possible_cached_mapping: Path) -> bool:
+        try:
+            if possible_cached_mapping.exists():
+                print(f"Cached model found, loading from {possible_cached_mapping}")
+                with open(possible_cached_mapping, "rb") as f:
+                    self.related_properties_lookup = pickle.load(f)
+                return True
+            else:
+                print("No cache found, recalculating model.")
+        except EOFError:
+            print("Caching failed, recalculating model.")
+        return False
 
     def fit(self, train_data: pd.DataFrame, last_day: datetime) -> None:
         if self.use_hash:
-            try:
-                hash_string = "".join(
-                    str(x)
-                    for x in [train_data.shape, train_data.head(2), train_data.tail(2)]
-                )
-                hash_id = hashlib.md5(hash_string.encode("utf-8")).hexdigest()[:10]
-                possible_cached_mapping = self.hash_location / hash_id
-                if (possible_cached_mapping).exists():
-                    print(f"Cached model found, loading from {possible_cached_mapping}")
-                    with open(possible_cached_mapping, "rb") as f:
-                        self.related_properties_lookup = pickle.load(f)
-                    return
-                else:
-                    print("No cache found, recalculating model.")
-            except EOFError:
-                print("Caching failed, recalculating model.")
+            possible_cached_mapping = self._calculate_cache_name(train_data)
+            if self._load_cache(possible_cached_mapping):
+                return
 
-        related_page_index = self._get_links(train_data)
-
-        def percentage_manhatten_adaptive_time_lag(arr1, arr2):
+        def percentage_manhatten_adaptive_time_lag(
+            arr1: csr_matrix, arr2: csr_matrix
+        ) -> float:
             arr1 = arr1.toarray()
             arr2 = arr2.toarray()
             max_changes = arr1.sum()
             mask = np.nonzero(arr1)
-            error = 0
+            error = 0.0
 
             for idx in mask[1]:
                 needed_num_changes = arr1[0, idx]
                 for off in range(
-                    -min(self.DELAY_RANGE, idx),
-                    min(self.DELAY_RANGE, arr2.shape[1] - idx),
+                    -min(self.delay_range, idx),
+                    min(self.delay_range, arr2.shape[1] - idx),
                 ):
                     used_changes = min(needed_num_changes, arr2[0, idx + off])
                     arr2[0, idx + off] -= used_changes
@@ -120,54 +116,34 @@ class PropertyCorrelationPredictor(Predictor):
 
             return error / max_changes
 
-        def percentage_manhatten_adaptive_time_lag_symmetric(arr1, arr2):
+        def percentage_manhatten_adaptive_time_lag_symmetric(
+            arr1: csr_matrix, arr2: csr_matrix
+        ) -> float:
             return max(
                 percentage_manhatten_adaptive_time_lag(arr1, arr2),
                 percentage_manhatten_adaptive_time_lag(arr2, arr1),
             )
 
+        related_page_index = self._get_links(train_data)
         min_support_groups = self._sparse_time_series_conversion(train_data)
 
-        page_id_groups = min_support_groups.reset_index()
-        page_id_groups = page_id_groups.groupby(["page_title"])[
+        page_title_groups = min_support_groups.reset_index()
+        page_title_groups = page_title_groups.groupby(["page_title"])[
             ["property_name", "bin_idx", "infobox_key"]
         ].agg(list)
 
-        links = set()
-
-        for related_pages in related_page_index.values():
-            for related_page in related_pages:
-                links.add(related_page)
-
-        pandas_links = pd.Series(list(links))
-
-        links_found = set(
-            pandas_links[
-                pandas_links.isin(
-                    min_support_groups.reset_index("page_title")["page_title"]
-                )
-            ]
+        links = self._find_working_links(min_support_groups, related_page_index)
+        page_to_related_pages = self._get_related_page_mapping(
+            links, related_page_index
         )
-
-        filtered_related_page_index = {}
-        for page_title, related_pages in related_page_index.items():
-            found_related_pages = []
-            for related_page in related_pages:
-                if (
-                    related_page in links_found
-                    and page_title in related_page_index[related_page]
-                    and related_pages != page_title
-                ):
-                    found_related_pages.append(related_page)
-            filtered_related_page_index[page_title] = found_related_pages
-
-        max_dist = 0.05
 
         same_infoboxes = []
         matches = {}
-        for key, row in tqdm(page_id_groups.iterrows(), total=len(page_id_groups)):
+        for key, row in tqdm(
+            page_title_groups.iterrows(), total=len(page_title_groups)
+        ):
             if len(row[1]) > 1:
-                related_items = page_id_groups.loc[filtered_related_page_index[key]]
+                related_items = page_title_groups.loc[page_to_related_pages[key]]
                 num_samples_from_links = 0
                 for _, related_row in related_items.iterrows():
                     num_samples_from_links += len(related_row[0])
@@ -180,7 +156,7 @@ class PropertyCorrelationPredictor(Predictor):
                         row[2].extend(related_row[2])
                 input_data = vstack(row[1])
                 neigh = NearestNeighbors(
-                    radius=max_dist,
+                    radius=self.PERCENT_ALLOWED_MISMATCHES,
                     metric=percentage_manhatten_adaptive_time_lag_symmetric,
                 )
                 neigh.fit(input_data)
@@ -202,6 +178,43 @@ class PropertyCorrelationPredictor(Predictor):
             possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
             with open(possible_cached_mapping, "wb") as f:
                 pickle.dump(self.related_properties_lookup, f)
+
+    @staticmethod
+    def _get_related_page_mapping(links, related_page_index):
+        page_to_related_pages = {}
+        for page_title, related_pages in related_page_index.items():
+            found_related_pages = []
+            for related_page in related_pages:
+                if (
+                    related_page in links
+                    and page_title in related_page_index[related_page]
+                    and related_pages != page_title
+                ):
+                    found_related_pages.append(related_page)
+            page_to_related_pages[page_title] = found_related_pages
+        return page_to_related_pages
+
+    @staticmethod
+    def _find_working_links(min_support_groups, related_page_index):
+        links = set()
+        for related_pages in related_page_index.values():
+            for related_page in related_pages:
+                links.add(related_page)
+        pandas_links = pd.Series(list(links))
+        links_found = set(
+            pandas_links[
+                pandas_links.isin(
+                    min_support_groups.reset_index("page_title")["page_title"]
+                )
+            ]
+        )
+        return links_found
+
+    def _calculate_cache_name(self, data: pd.DataFrame) -> Path:
+        hash_string = "".join(str(x) for x in [data.shape, data.head(2), data.tail(2)])
+        hash_id = hashlib.md5(hash_string.encode("utf-8")).hexdigest()[:10]
+        possible_cached_mapping = self.hash_location / hash_id
+        return possible_cached_mapping
 
     @staticmethod
     def get_relevant_attributes() -> List[str]:
