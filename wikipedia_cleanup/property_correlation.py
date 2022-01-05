@@ -21,7 +21,7 @@ class PropertyCorrelationPredictor(Predictor):
         self.related_properties_lookup: dict = {}
         self.MAX_PROPERTY_FROM_LINKS = 15
         self.use_hash = use_cache
-        self.hash_location = Path("")
+        self.hash_location = Path("cache") / self.__class__.__name__
         super().__init__()
 
     @staticmethod
@@ -199,6 +199,7 @@ class PropertyCorrelationPredictor(Predictor):
 
         self.related_properties_lookup = matches
         if self.use_hash:
+            possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
             with open(possible_cached_mapping, "wb") as f:
                 pickle.dump(self.related_properties_lookup, f)
 

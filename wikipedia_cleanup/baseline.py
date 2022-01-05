@@ -60,15 +60,17 @@ class TrainAndPredictFramework:
         train_data = self.data[self.data["value_valid_from"] < self.test_start_date]
         self.predictor.fit(train_data.copy(), self.test_start_date)
 
-    def test_model(self):
+    def test_model(self, randomize_order: bool = False):
         keys = self.data["key"].unique()
+        if randomize_order:
+            keys = np.random.shuffle(keys)
         all_day_labels = []
         test_dates = [
             (self.test_start_date + timedelta(days=x)).date()
             for x in range(self.test_duration)
         ]
-        predictions = [[] for _ in self.testing_timeframes]
-        for key in tqdm(keys[:200]):
+        predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
+        for key in tqdm(keys):
             current_data, additional_current_data = self.select_current_data(key)
 
             timestamps = self.convert_timestamps(current_data)
@@ -81,18 +83,19 @@ class TrainAndPredictFramework:
                 additional_timestamps,
                 test_dates,
             )
-
+            # save labels and predictions
             for i, prediction in enumerate(current_page_predictions):
                 predictions[i].append(prediction)
             day_labels = [date in timestamps for date in test_dates]
             all_day_labels.append(day_labels)
+
         return self.evaluate_predictions(predictions, all_day_labels)
 
     def convert_timestamps(self, data: pd.DataFrame) -> np.ndarray:
         return data["value_valid_from"].dt.date.to_numpy()
 
     def evaluate_predictions(
-        self, predictions: List[List[bool]], day_labels: List[List[bool]]
+        self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
     ) -> List:
         predictions = [
             np.array(prediction, dtype=np.bool) for prediction in predictions
