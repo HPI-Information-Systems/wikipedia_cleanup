@@ -18,18 +18,15 @@ from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
 
 class TrainAndPredictFramework:
     def __init__(
-        self,
-        predictor: Predictor,
-        group_key: List[str],
-        test_start_date: datetime = datetime(2018, 9, 1),
-        test_duration: int = 365,
+            self,
+            predictor: Predictor,
+            group_key: List[str],
+            test_start_date: datetime = datetime(2018, 9, 1),
+            test_duration: int = 365,
     ):
         self.test_start_date = test_start_date
         self.test_duration = test_duration
         self.group_key = group_key
-        # total_time_window = timedelta(testset_duration)  # days
-        # testset_end = testset_start + total_time_window
-        # time_offset = timedelta(1)
 
         self.predictor = predictor
         own_relevant_attributes = ["value_valid_from"]
@@ -62,7 +59,7 @@ class TrainAndPredictFramework:
         self.predictor.fit(train_data.copy(), self.test_start_date)
 
     def test_model(self):
-        page_ids = self.data["key"].unique()
+        keys = self.data["key"].unique()
         all_day_labels = []
         test_dates = [
             (self.test_start_date + timedelta(days=x)).date()
@@ -73,53 +70,19 @@ class TrainAndPredictFramework:
         timeframe_labels = ["day", "week", "month", "year"]
         predictions = [[] for _ in testing_timeframes]
 
-        for page_id in tqdm(page_ids):
-            current_page_predictions = [[] for _ in testing_timeframes]
+        for key in tqdm(keys[:200]):
+            current_data, additional_current_data = self.select_current_data(key)
 
-            relevant_page_ids = self.predictor.get_relevant_ids(page_id).copy()
+            additional_timestamps = additional_current_data["value_valid_from"].dt.date.to_numpy()
+            timestamps = current_data["value_valid_from"].dt.date.to_numpy()
 
-            current_data_key = self.data[self.data["key"] == page_id].sort_values(
-                by=["value_valid_from"]
-            )
-            relevant_page_ids = list(filter((page_id).__ne__, relevant_page_ids))
-            current_data = self.data[
-                self.data["key"].isin(relevant_page_ids)
-            ].sort_values(by=["value_valid_from"])
-
-            test_set_timestamps = current_data["value_valid_from"].dt.date.to_numpy()
-            test_set_timestamps_key = current_data_key[
-                "value_valid_from"
-            ].dt.date.to_numpy()
-
-            day_labels = [date in test_set_timestamps_key for date in test_dates]
-            # empty dataframe with same columns
-            train_input = current_data.iloc[:0]
-            train_input_key = current_data_key.iloc[:0]
-
-            for days_evaluated, current_date in enumerate(test_dates):
-                if len(test_set_timestamps_key) > 0:
-                    offset = np.searchsorted(
-                        test_set_timestamps_key, current_date, side="left"
-                    )
-                    train_input_key = current_data.iloc[:offset]
-
-                for i, timeframe in enumerate(testing_timeframes):
-                    if days_evaluated % timeframe == 0:
-                        if len(test_set_timestamps) > 0:
-                            offset = np.searchsorted(
-                                test_set_timestamps,
-                                current_date + timedelta(days=timeframe),
-                                side="left",
-                            )
-                            train_input = current_data.iloc[:offset]
-                        current_page_predictions[i].append(
-                            self.predictor.predict_timeframe(
-                                train_input_key, train_input, current_date, timeframe
-                            )
-                        )
+           
+            current_page_predictions = self.make_prediction(additional_current_data, additional_timestamps, current_data,
+                             test_dates, testing_timeframes, timestamps)
 
             for i, prediction in enumerate(current_page_predictions):
                 predictions[i].append(prediction)
+            day_labels = [date in timestamps for date in test_dates]
             all_day_labels.append(day_labels)
 
         predictions = [
@@ -130,13 +93,51 @@ class TrainAndPredictFramework:
             self.aggregate_labels(all_day_labels, timeframe)
             for timeframe in testing_timeframes
         ]
-        self.labels = labels
-        self.predictions = predictions
 
         prediction_stats = []
         for y_true, y_hat, title in zip(labels, predictions, timeframe_labels):
             prediction_stats.append(self.evaluate_prediction(y_true, y_hat, title))
         return prediction_stats
+
+    def get_data_until(self, data, timestamps, timestamp):
+        if len(data) > 0:
+            offset = np.searchsorted(
+                timestamps,
+                timestamp,
+                side="left",
+            )
+            return data.iloc[:offset]
+        else:
+            return data
+
+    def make_prediction(self, additional_current_data, additional_timestamps, current_data,
+                    test_dates, testing_timeframes, timestamps):
+        current_page_predictions = [[] for _ in testing_timeframes]
+
+        for days_evaluated, current_date in enumerate(test_dates):
+            train_input = self.get_data_until(current_data, timestamps, current_date)
+            for i, timeframe in enumerate(testing_timeframes):
+                if days_evaluated % timeframe == 0:
+                    additional_train_input = self.get_data_until(additional_current_data, additional_timestamps,  current_date + timedelta(days=timeframe))
+                
+                    current_page_predictions[i].append(
+                        self.predictor.predict_timeframe(
+                            train_input, additional_train_input, current_date, timeframe
+                        )
+                    )
+        return current_page_predictions
+
+    def select_current_data(self, key):
+        relevant_keys = self.predictor.get_relevant_ids(key).copy()
+
+        current_data = self.data[self.data["key"] == key].sort_values(
+            by=["value_valid_from"]
+        )
+        relevant_keys = list(filter(key.__ne__, relevant_keys))
+        additional_current_data = self.data[
+            self.data["key"].isin(relevant_keys)
+        ].sort_values(by=["value_valid_from"])
+        return current_data, additional_current_data
 
     def aggregate_labels(self, labels: np.ndarray, n: int):
         if n == 1:
@@ -151,7 +152,7 @@ class TrainAndPredictFramework:
     @staticmethod
     def print_stats(pre_rec_f1_stat, title):
         percent_data = pre_rec_f1_stat[3][1] / (
-            pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
+                pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
         )
         print(f"{title} \t\t changes \t no changes")
         print(
@@ -167,7 +168,7 @@ class TrainAndPredictFramework:
         print()
 
     def evaluate_prediction(
-        self, labels: np.ndarray, prediction: np.ndarray, title: str
+            self, labels: np.ndarray, prediction: np.ndarray, title: str
     ):
         stats = precision_recall_fscore_support(labels.flatten(), prediction.flatten())
         self.print_stats(stats, title)
