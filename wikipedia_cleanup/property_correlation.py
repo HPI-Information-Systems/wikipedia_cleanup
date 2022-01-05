@@ -3,7 +3,7 @@ import pickle
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -15,16 +15,19 @@ from wikipedia_cleanup.predictor import Predictor
 
 
 class PropertyCorrelationPredictor(Predictor):
+    # TODO justify choice
+    NUM_REQUIRED_CHANGES = 5
+    MAX_PROPERTY_FROM_LINKS = 15  # Set via boxplot whisker for symmetric links
+    PERCENT_ALLOWED_MISMATCHES = 0.05
+
     def __init__(self, allowed_change_delay: int = 3, use_cache: bool = True) -> None:
         super().__init__()
         self.related_properties_lookup: dict = {}
         self.hash_location = Path("cache") / self.__class__.__name__
 
         self.use_hash = use_cache
-        # TODO justify the 3 here
+        # TODO justify choice
         self.delay_range = allowed_change_delay
-        self.MAX_PROPERTY_FROM_LINKS = 15  # Set via boxplot whisker for symmetric links
-        self.PERCENT_ALLOWED_MISMATCHES = 0.05
 
     @staticmethod
     def _get_links(train_data: pd.DataFrame) -> Dict[str, List[str]]:
@@ -56,7 +59,9 @@ class PropertyCorrelationPredictor(Predictor):
         return csr_matrix(series)
 
     @staticmethod
-    def _sparse_time_series_conversion(train_data: pd.DataFrame) -> pd.Series:
+    def _sparse_time_series_conversion(
+        train_data: pd.DataFrame, keys: List[str]
+    ) -> pd.Series:
         bins = pd.date_range(
             train_data["value_valid_from"].min().date(),
             train_data["value_valid_from"].max().date() + timedelta(1),
@@ -65,11 +70,11 @@ class PropertyCorrelationPredictor(Predictor):
         bins = pd.cut(train_data["value_valid_from"], bins, labels=False)
         train_data["bin_idx"] = bins
 
-        num_required_changes = 5
-        groups = train_data.groupby(["infobox_key", "property_name"])
+        groups = train_data.groupby(keys)
         min_support_groups = train_data[
-            groups["bin_idx"].transform("count") > num_required_changes
-        ].groupby(["infobox_key", "page_id", "page_title", "property_name"])
+            groups["bin_idx"].transform("count")
+            > PropertyCorrelationPredictor.NUM_REQUIRED_CHANGES
+        ].groupby(list(set(["page_title"] + keys)))
         min_support_groups = min_support_groups["bin_idx"].apply(
             PropertyCorrelationPredictor._create_time_series, duration=total_days
         )
@@ -88,8 +93,9 @@ class PropertyCorrelationPredictor(Predictor):
             print("Caching failed, recalculating model.")
         return False
 
-    def fit(self, train_data: pd.DataFrame, last_day: datetime) -> None:
-        keys: List[str] = ["page_id"]
+    def fit(
+        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+    ) -> None:
         if self.use_hash:
             possible_cached_mapping = self._calculate_cache_name(train_data)
             if self._load_cache(possible_cached_mapping):
@@ -126,11 +132,14 @@ class PropertyCorrelationPredictor(Predictor):
             )
 
         related_page_index = self._get_links(train_data)
-        min_support_groups = self._sparse_time_series_conversion(train_data)
+        min_support_groups = self._sparse_time_series_conversion(train_data, keys)
 
         page_title_groups = min_support_groups.reset_index()
+        page_title_groups["selected_key"] = list(
+            zip(*[page_title_groups[key] for key in keys])
+        )
         page_title_groups = page_title_groups.groupby(["page_title"])[
-            ["property_name", "bin_idx", "infobox_key"] + keys
+            ["bin_idx", "selected_key"]
         ].agg(list)
 
         links = self._find_working_links(min_support_groups, related_page_index)
@@ -138,23 +147,21 @@ class PropertyCorrelationPredictor(Predictor):
             links, related_page_index
         )
 
-        same_infoboxes = []
         matches = {}
         for row in tqdm(page_title_groups.itertuples(), total=len(page_title_groups)):
-            if len(row.property_name) == 0:
+            if len(row.bin_idx) == 0:
                 break
 
             related_items = page_title_groups.loc[page_to_related_pages[row.Index]]
             num_samples_from_links = 0
             for related_row in related_items.itertuples():
-                num_samples_from_links += len(related_row.property_name)
+                num_samples_from_links += len(related_row.bin_idx)
                 if num_samples_from_links > self.MAX_PROPERTY_FROM_LINKS:
                     break
             if num_samples_from_links <= self.MAX_PROPERTY_FROM_LINKS:
                 for related_row in related_items.itertuples():
-                    row.property_name.extend(related_row.property_name)
                     row.bin_idx.extend(related_row.bin_idx)
-                    row.infobox_key.extend(related_row.infobox_key)
+                    row.selected_key.extend(related_row.selected_key)
             input_data = vstack(row.bin_idx)
             neigh = NearestNeighbors(
                 radius=self.PERCENT_ALLOWED_MISMATCHES,
@@ -163,16 +170,11 @@ class PropertyCorrelationPredictor(Predictor):
             neigh.fit(input_data)
             neighbor_indices = neigh.radius_neighbors(return_distance=False)
             for i, neighbors in enumerate(neighbor_indices):
-                infobox = row.infobox_key[i]
                 if len(neighbors) > 0:
-                    infobox_keys = np.array(row.infobox_key)[neighbors]
-                    same_infobox = infobox_keys == infobox
-                    same_infoboxes.append(same_infobox)
-
-                    property_names = np.array(row.property_name)[neighbors]
-                    match = list(zip(infobox_keys, property_names))
-                    match.append((infobox, row.property_name[i]))
-                    matches[(infobox, row.property_name[i])] = match
+                    match = [
+                        row.selected_key[neighbor_idx] for neighbor_idx in neighbors
+                    ]
+                    matches[row.selected_key[i]] = match
 
         self.related_properties_lookup = matches
         if self.use_hash:
@@ -251,7 +253,7 @@ class PropertyCorrelationPredictor(Predictor):
         ]
         return len(future_data) != 0
 
-    def get_relevant_ids(self, identifier: str) -> List[str]:
+    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         if identifier not in self.related_properties_lookup.keys():
             return [identifier]
         return self.related_properties_lookup[identifier]

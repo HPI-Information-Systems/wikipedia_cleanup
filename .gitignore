@@ -2,6 +2,7 @@
 .venv
 personal-knowledge.txt
 garbage
+cache
 
 .vscode
 .DS_Store

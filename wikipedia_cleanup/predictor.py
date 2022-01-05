@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import date, datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -21,7 +21,9 @@ class Predictor(ABC):
     #     return False
 
     @abstractmethod
-    def fit(self, train_data: pd.DataFrame, last_day: datetime) -> None:
+    def fit(
+        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+    ) -> None:
         raise NotImplementedError()
 
     @staticmethod
@@ -39,12 +41,14 @@ class Predictor(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_relevant_ids(self, identifier: str) -> List[str]:
+    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         raise NotImplementedError()
 
 
 class ZeroPredictor(Predictor):
-    def fit(self, train_data: pd.DataFrame, last_day: datetime) -> None:
+    def fit(
+        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+    ) -> None:
         pass
 
     def predict_timeframe(
@@ -56,7 +60,7 @@ class ZeroPredictor(Predictor):
     ) -> bool:
         return False
 
-    def get_relevant_ids(self, identifier: str) -> List[str]:
+    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return [identifier]
 
     @staticmethod

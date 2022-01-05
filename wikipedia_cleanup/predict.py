@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -58,7 +58,7 @@ class TrainAndPredictFramework:
 
     def fit_model(self):
         train_data = self.data[self.data["value_valid_from"] < self.test_start_date]
-        self.predictor.fit(train_data.copy(), self.test_start_date)
+        self.predictor.fit(train_data.copy(), self.test_start_date, self.group_key)
 
     def test_model(self, randomize_order: bool = False):
         keys = self.data["key"].unique()
@@ -153,7 +153,7 @@ class TrainAndPredictFramework:
                     )
         return current_page_predictions
 
-    def select_current_data(self, key: Any) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def select_current_data(self, key: Tuple) -> Tuple[pd.DataFrame, pd.DataFrame]:
         relevant_keys = self.predictor.get_relevant_ids(key).copy()
 
         current_data = self.data[self.data["key"] == key].sort_values(
