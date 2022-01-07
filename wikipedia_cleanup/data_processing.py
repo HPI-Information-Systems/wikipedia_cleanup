@@ -135,6 +135,7 @@ def get_data(
         filters = []
     files = [x for x in Path(input_path).rglob("*.output.json") if x.is_file()]
     files.extend([x for x in Path(input_path).rglob("*.pickle") if x.is_file()])
+    files.sort()
     files = files[slice(n_files)]
     n_jobs = min(n_jobs, len(files))
     if n_jobs > 1:
@@ -159,6 +160,52 @@ def get_data(
     merge_filter_stats_into(mapped_filters, filters)
     return pd.DataFrame([change.__dict__ for change in all_changes])
 
+def get_data_single(
+    file: Path,
+    data_filters: Optional[List[AbstractDataFilter]] = None,
+) -> pd.DataFrame:
+
+    changes_and_filters = read_and_filter_file(file, data_filters)
+    all_changes=[changes_and_filters[0]]
+    mapped_filters=[changes_and_filters[1]]
+    all_changes = itertools.chain.from_iterable(all_changes)
+    merge_filter_stats_into(mapped_filters, [data_filters])
+    return pd.DataFrame([change.__dict__ for change in all_changes])
+
+def feature_generation(df):
+    df=df.rename(columns={"value_valid_from":"timestamp"})
+    df["timestamp"]=df["timestamp"].dt.normalize().dt.tz_localize(None)
+
+    df['day_of_year'] = df['timestamp'].dt.dayofyear
+    df['day_of_month'] = df['timestamp'].dt.day
+    df['day_of_week'] = df['timestamp'].dt.dayofweek
+    df['month_of_year'] = df['timestamp'].dt.month
+    df['quarter_of_year'] = df['timestamp'].dt.quarter
+    df['is_month_start'] = df['timestamp'].dt.is_month_start
+    df['is_month_end'] = df['timestamp'].dt.is_month_end
+    df['is_quarter_start'] = df['timestamp'].dt.is_quarter_start
+    df['is_quarter_end'] = df['timestamp'].dt.is_quarter_end
+
+    df['days_since_last_change'] = (df["timestamp"]-df.groupby(['infobox_key', 'property_name'])['timestamp'].shift(+1).fillna(pd.Timestamp('20990101'))).dt.days
+    df.loc[(df['days_since_last_change']<0),'days_since_last_change']=0
+    
+    df['days_since_last_2_changes'] = (df["timestamp"]-df.groupby(['infobox_key', 'property_name'])['timestamp'].shift(+2).fillna(pd.Timestamp('20990101'))).dt.days
+    df.loc[(df['days_since_last_2_changes']<0),'days_since_last_2_changes']=0
+
+    df['days_since_last_3_changes'] = (df["timestamp"]-df.groupby(['infobox_key', 'property_name'])['timestamp'].shift(+3).fillna(pd.Timestamp('20990101'))).dt.days
+    df.loc[(df['days_since_last_3_changes']<0),'days_since_last_3_changes']=0
+
+    df['days_until_next_change'] = df.groupby(['infobox_key', 'property_name'])['days_since_last_change'].shift(-1)
+    df['days_until_next_change'] = pd.to_numeric(df['days_until_next_change'].fillna(0),downcast="integer")
+
+    df['days_between_last_and_2nd_to_last_change'] = df.groupby(['infobox_key', 'property_name'])['days_since_last_change'].shift(+1)
+    df['days_between_last_and_2nd_to_last_change'] = pd.to_numeric(df['days_between_last_and_2nd_to_last_change'].fillna(0),downcast="integer")
+
+    df['mean_change_frequency_all_previous'] = df.groupby(['infobox_key', 'property_name'])['days_since_last_change'].apply(lambda x: x.iloc[0:1].append(x.iloc[1:].expanding().mean()))
+
+    df['mean_change_frequency_last_3'] = df.groupby(['infobox_key', 'property_name'])['days_since_last_change'].apply(lambda x: x.iloc[0:1].append(x.iloc[1:].rolling(3).mean())).fillna(0)
+    
+    return df
 
 # local test
 if __name__ == "__main__":
