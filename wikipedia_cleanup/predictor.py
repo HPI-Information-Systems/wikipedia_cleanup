@@ -10,7 +10,7 @@ import pandas as pd
 class Predictor(ABC):
     @abstractmethod
     def fit(
-            self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
         raise NotImplementedError()
 
@@ -20,11 +20,11 @@ class Predictor(ABC):
 
     @abstractmethod
     def predict_timeframe(
-            self,
-            data_key: pd.DataFrame,
-            additional_data: pd.DataFrame,
-            current_day: date,
-            timeframe: int,
+        self,
+        data_key: pd.DataFrame,
+        additional_data: pd.DataFrame,
+        current_day: date,
+        timeframe: int,
     ) -> bool:
         raise NotImplementedError()
 
@@ -35,16 +35,16 @@ class Predictor(ABC):
 
 class ZeroPredictor(Predictor):
     def fit(
-            self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
         pass
 
     def predict_timeframe(
-            self,
-            data_key: pd.DataFrame,
-            additional_data: pd.DataFrame,
-            current_day: date,
-            timeframe: int,
+        self,
+        data_key: pd.DataFrame,
+        additional_data: pd.DataFrame,
+        current_day: date,
+        timeframe: int,
     ) -> bool:
         return False
 
@@ -58,11 +58,11 @@ class ZeroPredictor(Predictor):
 
 class OnePredictor(ZeroPredictor):
     def predict_timeframe(
-            self,
-            data_key: pd.DataFrame,
-            additional_data: pd.DataFrame,
-            current_day: date,
-            timeframe: int,
+        self,
+        data_key: pd.DataFrame,
+        additional_data: pd.DataFrame,
+        current_day: date,
+        timeframe: int,
     ) -> bool:
         return True
 
@@ -72,22 +72,22 @@ class RandomPredictor(ZeroPredictor):
         self.p = p
 
     def predict_timeframe(
-            self,
-            data_key: pd.DataFrame,
-            additional_data: pd.DataFrame,
-            current_day: date,
-            timeframe: int,
+        self,
+        data_key: pd.DataFrame,
+        additional_data: pd.DataFrame,
+        current_day: date,
+        timeframe: int,
     ) -> bool:
         return random.random() <= self.p
 
 
 class MeanPredictor(ZeroPredictor):
     def predict_timeframe(
-            self,
-            data_key: pd.DataFrame,
-            additional_data: pd.DataFrame,
-            current_day: date,
-            timeframe: int,
+        self,
+        data_key: pd.DataFrame,
+        additional_data: pd.DataFrame,
+        current_day: date,
+        timeframe: int,
     ) -> bool:
         pred = self.next_change(data_key)
         if pred is None:
@@ -104,6 +104,6 @@ class MeanPredictor(ZeroPredictor):
             previous_change_timestamps[1:] - previous_change_timestamps[0:-1]
         )
         return_value: np.datetime64 = (
-                previous_change_timestamps[-1] + mean_time_to_change
+            previous_change_timestamps[-1] + mean_time_to_change
         )
         return pd.to_datetime(return_value).date()
