@@ -154,6 +154,7 @@ class PropertyCorrelationPredictor(Predictor):
 
             related_items = page_title_groups.loc[page_to_related_pages[row.Index]]
             num_samples_from_links = 0
+            # TODO Change this to number of rows in page + num samples from links
             for related_row in related_items.itertuples():
                 num_samples_from_links += len(related_row.bin_idx)
                 if num_samples_from_links > self.MAX_PROPERTY_FROM_LINKS:
