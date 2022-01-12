@@ -19,11 +19,11 @@ from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
 
 class TrainAndPredictFramework:
     def __init__(
-            self,
-            predictor: Predictor,
-            group_key: List[str],
-            test_start_date: datetime = datetime(2018, 9, 1),
-            test_duration: int = 365,
+        self,
+        predictor: Predictor,
+        group_key: List[str],
+        test_start_date: datetime = datetime(2018, 9, 1),
+        test_duration: int = 365,
     ):
         self.test_start_date = test_start_date
         self.test_duration = test_duration
@@ -101,7 +101,7 @@ class TrainAndPredictFramework:
         return data["value_valid_from"].dt.date.to_numpy()
 
     def evaluate_predictions(
-            self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
+        self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
     ) -> List:
         predictions = [
             np.array(prediction, dtype=np.bool) for prediction in predictions
@@ -119,7 +119,7 @@ class TrainAndPredictFramework:
 
     @staticmethod
     def get_data_until(
-            data: pd.DataFrame, timestamps: np.ndarray, timestamp: date
+        data: pd.DataFrame, timestamps: np.ndarray, timestamp: date
     ) -> pd.DataFrame:
         if len(data) > 0:
             offset = np.searchsorted(
@@ -132,12 +132,12 @@ class TrainAndPredictFramework:
             return data
 
     def make_prediction(
-            self,
-            current_data: pd.DataFrame,
-            timestamps: np.ndarray,
-            additional_current_data: pd.DataFrame,
-            additional_timestamps: np.ndarray,
-            test_dates: List[date],
+        self,
+        current_data: pd.DataFrame,
+        timestamps: np.ndarray,
+        additional_current_data: pd.DataFrame,
+        additional_timestamps: np.ndarray,
+        test_dates: List[date],
     ) -> List[List[bool]]:
         current_page_predictions: List[List[bool]] = [
             [] for _ in self.testing_timeframes
@@ -183,28 +183,36 @@ class TrainAndPredictFramework:
         return np.any(padded_labels, axis=2)
 
     @staticmethod
-    def print_stats(pre_rec_f1_stat, title):
+    def print_stats(
+        pre_rec_f1_stat: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+        num_pos_predictions: int,
+        title: str,
+    ):
         percent_data = pre_rec_f1_stat[3][1] / (
-                pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
+            pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
+        )
+        percent_changes_pred = num_pos_predictions / (
+            pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
         )
         print(f"{title} \t\t\tchanges \tno changes")
         print(
             f"Precision:\t\t{pre_rec_f1_stat[0][1]:.4} \t\t{pre_rec_f1_stat[0][0]:.4}"
         )
+        print(f"Recall:\t\t\t{pre_rec_f1_stat[1][1]:.4} \t\t{pre_rec_f1_stat[1][0]:.4}")
+        print(f"F1score:\t\t{pre_rec_f1_stat[2][1]:.4} \t\t{pre_rec_f1_stat[2][0]:.4}")
+        print(f"Changes of Data:\t{percent_data:.4%}, \tTotal: {pre_rec_f1_stat[3][1]}")
         print(
-            f"Recall:\t\t\t{pre_rec_f1_stat[1][1]:.4} \t\t{pre_rec_f1_stat[1][0]:.4}"
+            f"Changes of Pred:\t{percent_changes_pred:.4%},"
+            f" \tTotal: {num_pos_predictions}"
         )
-        print(
-            f"F1score:\t\t{pre_rec_f1_stat[2][1]:.4} \t\t{pre_rec_f1_stat[2][0]:.4}"
-        )
-        print(f"Percent of Data:\t{percent_data:.4}, \tTotal: {pre_rec_f1_stat[3][1]}")
         print()
 
     def evaluate_prediction(
-            self, labels: np.ndarray, prediction: np.ndarray, title: str
+        self, labels: np.ndarray, prediction: np.ndarray, title: str
     ):
         stats = precision_recall_fscore_support(labels.flatten(), prediction.flatten())
-        self.print_stats(stats, title)
+        total_positive_predictions = np.count_nonzero(prediction)
+        self.print_stats(stats, total_positive_predictions, title)
         return stats
 
     def run_pipeline(self):
