@@ -1,3 +1,4 @@
+import math
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple
@@ -18,11 +19,11 @@ from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
 
 class TrainAndPredictFramework:
     def __init__(
-        self,
-        predictor: Predictor,
-        group_key: List[str],
-        test_start_date: datetime = datetime(2018, 9, 1),
-        test_duration: int = 365,
+            self,
+            predictor: Predictor,
+            group_key: List[str],
+            test_start_date: datetime = datetime(2018, 9, 1),
+            test_duration: int = 365,
     ):
         self.test_start_date = test_start_date
         self.test_duration = test_duration
@@ -60,10 +61,14 @@ class TrainAndPredictFramework:
         train_data = self.data[self.data["value_valid_from"] < self.test_start_date]
         self.predictor.fit(train_data.copy(), self.test_start_date, self.group_key)
 
-    def test_model(self, randomize_order: bool = False):
+    def test_model(self, randomize: bool = False, predict_subset: float = 1.0):
         keys = self.data["key"].unique()
-        if randomize_order:
-            keys = np.random.shuffle(keys)
+        if randomize:
+            np.random.shuffle(keys)
+        if predict_subset < 1:
+            print(f"Predicting only {predict_subset:.2%} percent of the data.")
+            subset_idx = math.ceil(len(keys) * predict_subset)
+            keys = keys[:subset_idx]
         all_day_labels = []
         test_dates = [
             (self.test_start_date + timedelta(days=x)).date()
@@ -95,7 +100,7 @@ class TrainAndPredictFramework:
         return data["value_valid_from"].dt.date.to_numpy()
 
     def evaluate_predictions(
-        self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
+            self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
     ) -> List:
         predictions = [
             np.array(prediction, dtype=np.bool) for prediction in predictions
@@ -112,7 +117,7 @@ class TrainAndPredictFramework:
         return prediction_stats
 
     def get_data_until(
-        self, data: pd.DataFrame, timestamps: np.ndarray, timestamp: date
+            self, data: pd.DataFrame, timestamps: np.ndarray, timestamp: date
     ) -> pd.DataFrame:
         if len(data) > 0:
             offset = np.searchsorted(
@@ -125,12 +130,12 @@ class TrainAndPredictFramework:
             return data
 
     def make_prediction(
-        self,
-        current_data: pd.DataFrame,
-        timestamps: np.ndarray,
-        additional_current_data: pd.DataFrame,
-        additional_timestamps: np.ndarray,
-        test_dates: List[date],
+            self,
+            current_data: pd.DataFrame,
+            timestamps: np.ndarray,
+            additional_current_data: pd.DataFrame,
+            additional_timestamps: np.ndarray,
+            test_dates: List[date],
     ) -> List[List[bool]]:
         current_page_predictions: List[List[bool]] = [
             [] for _ in self.testing_timeframes
@@ -178,23 +183,23 @@ class TrainAndPredictFramework:
     @staticmethod
     def print_stats(pre_rec_f1_stat, title):
         percent_data = pre_rec_f1_stat[3][1] / (
-            pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
+                pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
         )
-        print(f"{title} \t\t changes \t no changes")
+        print(f"{title} \t\t\tchanges \tno changes")
         print(
-            f"Precision:\t\t {pre_rec_f1_stat[0][1]:.4} \t\t {pre_rec_f1_stat[0][0]:.4}"
-        )
-        print(
-            f"Recall:\t\t\t {pre_rec_f1_stat[1][1]:.4} \t\t {pre_rec_f1_stat[1][0]:.4}"
+            f"Precision:\t\t{pre_rec_f1_stat[0][1]:.4} \t\t{pre_rec_f1_stat[0][0]:.4}"
         )
         print(
-            f"F1score:\t\t {pre_rec_f1_stat[2][1]:.4} \t\t {pre_rec_f1_stat[2][0]:.4}"
+            f"Recall:\t\t\t{pre_rec_f1_stat[1][1]:.4} \t\t{pre_rec_f1_stat[1][0]:.4}"
         )
-        print(f"Percent of Data:\t {percent_data:.4}, \tTotal: {pre_rec_f1_stat[3][1]}")
+        print(
+            f"F1score:\t\t{pre_rec_f1_stat[2][1]:.4} \t\t{pre_rec_f1_stat[2][0]:.4}"
+        )
+        print(f"Percent of Data:\t{percent_data:.4}, \tTotal: {pre_rec_f1_stat[3][1]}")
         print()
 
     def evaluate_prediction(
-        self, labels: np.ndarray, prediction: np.ndarray, title: str
+            self, labels: np.ndarray, prediction: np.ndarray, title: str
     ):
         stats = precision_recall_fscore_support(labels.flatten(), prediction.flatten())
         self.print_stats(stats, title)
