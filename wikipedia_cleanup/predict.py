@@ -96,7 +96,8 @@ class TrainAndPredictFramework:
 
         return self.evaluate_predictions(predictions, all_day_labels)
 
-    def convert_timestamps(self, data: pd.DataFrame) -> np.ndarray:
+    @staticmethod
+    def convert_timestamps(data: pd.DataFrame) -> np.ndarray:
         return data["value_valid_from"].dt.date.to_numpy()
 
     def evaluate_predictions(
@@ -116,8 +117,9 @@ class TrainAndPredictFramework:
             prediction_stats.append(self.evaluate_prediction(y_true, y_hat, title))
         return prediction_stats
 
+    @staticmethod
     def get_data_until(
-            self, data: pd.DataFrame, timestamps: np.ndarray, timestamp: date
+            data: pd.DataFrame, timestamps: np.ndarray, timestamp: date
     ) -> pd.DataFrame:
         if len(data) > 0:
             offset = np.searchsorted(

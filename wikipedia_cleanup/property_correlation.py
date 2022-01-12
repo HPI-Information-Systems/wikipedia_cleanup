@@ -17,7 +17,7 @@ from wikipedia_cleanup.predictor import Predictor
 class PropertyCorrelationPredictor(Predictor):
     # TODO justify choice
     NUM_REQUIRED_CHANGES = 5
-    MAX_PROPERTY_FROM_LINKS = 15  # Set via boxplot whisker for symmetric links
+    MAX_ALLOWED_PROPERTIES = 55  # Set via boxplot whisker for all links (53)
     PERCENT_ALLOWED_MISMATCHES = 0.05
 
     def __init__(self, allowed_change_delay: int = 3, use_cache: bool = True) -> None:
@@ -153,13 +153,12 @@ class PropertyCorrelationPredictor(Predictor):
                 break
 
             related_items = page_title_groups.loc[page_to_related_pages[row.Index]]
-            num_samples_from_links = 0
-            # TODO Change this to number of rows in page + num samples from links
+            num_samples_from_links = len(row.bin_idx)
             for related_row in related_items.itertuples():
                 num_samples_from_links += len(related_row.bin_idx)
-                if num_samples_from_links > self.MAX_PROPERTY_FROM_LINKS:
+                if num_samples_from_links > self.MAX_ALLOWED_PROPERTIES:
                     break
-            if num_samples_from_links <= self.MAX_PROPERTY_FROM_LINKS:
+            if num_samples_from_links <= self.MAX_ALLOWED_PROPERTIES:
                 for related_row in related_items.itertuples():
                     row.bin_idx.extend(related_row.bin_idx)
                     row.selected_key.extend(related_row.selected_key)
