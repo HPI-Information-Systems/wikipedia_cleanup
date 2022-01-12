@@ -2,6 +2,7 @@ import math
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -83,34 +84,55 @@ class TrainAndPredictFramework:
         all_day_labels = []
         single_percent_of_data = len(keys) // 100
         progress_bar_it = tqdm(keys)
-        for n_processed_keys, key in enumerate(progress_bar_it):
-            current_data, additional_current_data = self.select_current_data(key)
+        with ProcessPoolExecutor(8) as pool:
+            res_quere = []
+            for n_processed_keys, key in enumerate(progress_bar_it):
+                current_data, additional_current_data = self.select_current_data(key)
+                # SUBMIT
+                res_quere.append(
+                    pool.submit(TrainAndPredictFramework.predict_single_key, self.predictor,
+                                self.testing_timeframes,
+                                additional_current_data, current_data,
+                                predictions, test_dates))
+                if len(res_quere) == 16:
+                    for res in res_quere:
+                        res = res.result()
+                        all_day_labels.append(res[0])
+                        predictions.append(res[1])
+                        if n_processed_keys % single_percent_of_data == 0 and n_processed_keys > 0:
+                            stats = self.evaluate_predictions(predictions, all_day_labels, False)
+                            stats_dict = {
+                                "🌒🎯D_pr": stats[0][0][1],
+                                "🌒📞D_rc": stats[0][1][1],
+                                "🌓🎯W_pc": stats[1][0][1],
+                                "🌓📞W_rc": stats[1][1][1],
+                            }
+                            progress_bar_it.set_postfix(stats_dict, refresh=False)
+                        print("Results got!")
+                    res_quere = []
 
-            timestamps = self.convert_timestamps(current_data)
-            additional_timestamps = self.convert_timestamps(additional_current_data)
-
-            current_page_predictions = self.make_prediction(
-                current_data,
-                timestamps,
-                additional_current_data,
-                additional_timestamps,
-                test_dates,
-            )
-            # save labels and predictions
-            for i, prediction in enumerate(current_page_predictions):
-                predictions[i].append(prediction)
-            day_labels = [date in timestamps for date in test_dates]
-            all_day_labels.append(day_labels)
-            if n_processed_keys % single_percent_of_data == 0 and n_processed_keys > 0:
-                stats = self.evaluate_predictions(predictions, all_day_labels, False)
-                stats_dict = {
-                    "🌒🎯D_pr": stats[0][0][1],
-                    "🌒📞D_rc": stats[0][1][1],
-                    "🌓🎯W_pc": stats[1][0][1],
-                    "🌓📞W_rc": stats[1][1][1],
-                }
-                progress_bar_it.set_postfix(stats_dict, refresh=False)
         self.evaluate_predictions(predictions, all_day_labels)
+
+    @staticmethod
+    def predict_single_key(predictor, testing_timeframes, additional_current_data,
+                           current_data, predictions,
+                           test_dates):
+        timestamps = TrainAndPredictFramework.convert_timestamps(current_data)
+        additional_timestamps = TrainAndPredictFramework.convert_timestamps(additional_current_data)
+        current_page_predictions = TrainAndPredictFramework.make_prediction(
+            predictor,
+            current_data,
+            timestamps,
+            additional_current_data,
+            additional_timestamps,
+            test_dates,
+            testing_timeframes
+        )
+        # save labels and predictions
+        for i, prediction in enumerate(current_page_predictions):
+            predictions[i].append(prediction)
+        day_labels = [date in timestamps for date in test_dates]
+        return day_labels, predictions
 
     @staticmethod
     def convert_timestamps(data: pd.DataFrame) -> np.ndarray:
@@ -152,30 +174,33 @@ class TrainAndPredictFramework:
         else:
             return data
 
+    @staticmethod
     def make_prediction(
-            self,
+            predictor: Predictor,
             current_data: pd.DataFrame,
             timestamps: np.ndarray,
             additional_current_data: pd.DataFrame,
             additional_timestamps: np.ndarray,
             test_dates: List[date],
+            testing_timeframes: List[int]
     ) -> List[List[bool]]:
         current_page_predictions: List[List[bool]] = [
-            [] for _ in self.testing_timeframes
+            [] for _ in testing_timeframes
         ]
 
         for days_evaluated, current_date in enumerate(test_dates):
-            train_input = self.get_data_until(current_data, timestamps, current_date)
-            for i, timeframe in enumerate(self.testing_timeframes):
+            train_input = TrainAndPredictFramework.get_data_until(current_data, timestamps,
+                                                                  current_date)
+            for i, timeframe in enumerate(testing_timeframes):
                 if days_evaluated % timeframe == 0:
-                    additional_train_input = self.get_data_until(
+                    additional_train_input = TrainAndPredictFramework.get_data_until(
                         additional_current_data,
                         additional_timestamps,
                         current_date + timedelta(days=timeframe),
                     )
 
                     current_page_predictions[i].append(
-                        self.predictor.predict_timeframe(
+                        predictor.predict_timeframe(
                             train_input, additional_train_input, current_date, timeframe
                         )
                     )
@@ -243,12 +268,11 @@ class TrainAndPredictFramework:
 
 if __name__ == "__main__":
     n_files = 4
-    n_jobs = 4
+    n_jobs = 1
     input_path = Path("../../data/custom-format-default-filtered/")
 
     model = PropertyCorrelationPredictor()
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
-    # framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
     framework.test_model()

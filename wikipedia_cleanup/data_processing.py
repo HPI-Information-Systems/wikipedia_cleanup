@@ -135,6 +135,7 @@ def get_data(
         filters = []
     files = [x for x in Path(input_path).rglob("*.output.json") if x.is_file()]
     files.extend([x for x in Path(input_path).rglob("*.pickle") if x.is_file()])
+    files = sorted(files)
     files = files[slice(n_files)]
     n_jobs = min(n_jobs, len(files))
     if n_jobs > 1:
