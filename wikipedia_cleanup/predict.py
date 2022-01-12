@@ -75,7 +75,10 @@ class TrainAndPredictFramework:
             for x in range(self.test_duration)
         ]
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
-        for key in tqdm(keys):
+
+        single_percent_of_data = len(keys) // 100
+        progress_bar_it = tqdm(keys)
+        for n_processed_keys, key in enumerate(progress_bar_it):
             current_data, additional_current_data = self.select_current_data(key)
 
             timestamps = self.convert_timestamps(current_data)
@@ -93,6 +96,15 @@ class TrainAndPredictFramework:
                 predictions[i].append(prediction)
             day_labels = [date in timestamps for date in test_dates]
             all_day_labels.append(day_labels)
+            if n_processed_keys % single_percent_of_data == 0 and n_processed_keys > 0:
+                stats = self.evaluate_predictions(predictions, all_day_labels, False)
+                stats_dict = {
+                    "🌒🎯D_pr": stats[0][0][1],
+                    "🌒📞D_rc": stats[0][1][1],
+                    "🌓🎯W_pc": stats[1][0][1],
+                    "🌓📞W_rc": stats[1][1][1],
+                }
+                progress_bar_it.set_postfix(stats_dict, refresh=False)
 
         return self.evaluate_predictions(predictions, all_day_labels)
 
@@ -101,7 +113,10 @@ class TrainAndPredictFramework:
         return data["value_valid_from"].dt.date.to_numpy()
 
     def evaluate_predictions(
-        self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
+        self,
+        predictions: List[List[List[bool]]],
+        day_labels: List[List[bool]],
+        print_output: bool = True,
     ) -> List:
         predictions = [
             np.array(prediction, dtype=np.bool) for prediction in predictions
@@ -114,7 +129,9 @@ class TrainAndPredictFramework:
 
         prediction_stats = []
         for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
-            prediction_stats.append(self.evaluate_prediction(y_true, y_hat, title))
+            prediction_stats.append(
+                self.evaluate_prediction(y_true, y_hat, title, print_output)
+            )
         return prediction_stats
 
     @staticmethod
@@ -208,11 +225,12 @@ class TrainAndPredictFramework:
         print()
 
     def evaluate_prediction(
-        self, labels: np.ndarray, prediction: np.ndarray, title: str
+        self, labels: np.ndarray, prediction: np.ndarray, title: str, print_output: bool
     ):
         stats = precision_recall_fscore_support(labels.flatten(), prediction.flatten())
         total_positive_predictions = np.count_nonzero(prediction)
-        self.print_stats(stats, total_positive_predictions, title)
+        if print_output:
+            self.print_stats(stats, total_positive_predictions, title)
         return stats
 
     def run_pipeline(self):
