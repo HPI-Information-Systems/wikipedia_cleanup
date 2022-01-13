@@ -1,7 +1,7 @@
 import math
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -76,7 +76,7 @@ class TrainAndPredictFramework:
         ]
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
 
-        single_percent_of_data = len(keys) // 100
+        single_percent_of_data = max(len(keys) // 100, 1)
         progress_bar_it = tqdm(keys)
         for n_processed_keys, key in enumerate(progress_bar_it):
             current_data, additional_current_data = self.select_current_data(key)
@@ -96,15 +96,16 @@ class TrainAndPredictFramework:
                 predictions[i].append(prediction)
             day_labels = [date in timestamps for date in test_dates]
             all_day_labels.append(day_labels)
-            if n_processed_keys % single_percent_of_data == 0 and n_processed_keys > 0:
+            if n_processed_keys % single_percent_of_data == 0:
                 stats = self.evaluate_predictions(predictions, all_day_labels, False)
-                stats_dict = {
-                    "🌒🎯D_pr": stats[0][0][1],
-                    "🌒📞D_rc": stats[0][1][1],
-                    "🌓🎯W_pc": stats[1][0][1],
-                    "🌓📞W_rc": stats[1][1][1],
-                }
-                progress_bar_it.set_postfix(stats_dict, refresh=False)
+                if stats:
+                    stats_dict = {
+                        "🌒🎯D_pr": stats[0][0][1],
+                        "🌒📞D_rc": stats[0][1][1],
+                        "🌓🎯W_pc": stats[1][0][1],
+                        "🌓📞W_rc": stats[1][1][1],
+                    }
+                    progress_bar_it.set_postfix(stats_dict, refresh=False)
 
         return self.evaluate_predictions(predictions, all_day_labels)
 
@@ -117,22 +118,24 @@ class TrainAndPredictFramework:
         predictions: List[List[List[bool]]],
         day_labels: List[List[bool]],
         print_output: bool = True,
-    ) -> List:
-        predictions = [
-            np.array(prediction, dtype=np.bool) for prediction in predictions
-        ]
-        all_day_labels = np.array(day_labels, dtype=np.bool)
-        labels = [
-            self.aggregate_labels(all_day_labels, timeframe)
-            for timeframe in self.testing_timeframes
-        ]
+    ) -> Optional[List]:
+        if np.any(day_labels):
+            predictions = [
+                np.array(prediction, dtype=np.bool) for prediction in predictions
+            ]
+            all_day_labels = np.array(day_labels, dtype=np.bool)
+            labels = [
+                self.aggregate_labels(all_day_labels, timeframe)
+                for timeframe in self.testing_timeframes
+            ]
 
-        prediction_stats = []
-        for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
-            prediction_stats.append(
-                self.evaluate_prediction(y_true, y_hat, title, print_output)
-            )
-        return prediction_stats
+            prediction_stats = []
+            for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
+                prediction_stats.append(
+                    self.evaluate_prediction(y_true, y_hat, title, print_output)
+                )
+            return prediction_stats
+        return None
 
     @staticmethod
     def get_data_until(
@@ -189,7 +192,7 @@ class TrainAndPredictFramework:
         ].sort_values(by=["value_valid_from"])
         return current_data, additional_current_data
 
-    def aggregate_labels(self, labels: np.ndarray, n: int):
+    def aggregate_labels(self, labels: np.ndarray, n: int) -> np.ndarray:
         if n == 1:
             return labels
         if self.test_duration % n != 0:
@@ -226,7 +229,7 @@ class TrainAndPredictFramework:
 
     def evaluate_prediction(
         self, labels: np.ndarray, prediction: np.ndarray, title: str, print_output: bool
-    ):
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         stats = precision_recall_fscore_support(labels.flatten(), prediction.flatten())
         total_positive_predictions = np.count_nonzero(prediction)
         if print_output:
@@ -238,8 +241,8 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 4
-    n_jobs = 4
+    n_files = 1
+    n_jobs = 1
     input_path = Path("../../data/custom-format-default-filtered/")
 
     model = PropertyCorrelationPredictor()
@@ -247,4 +250,4 @@ if __name__ == "__main__":
     # framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
-    framework.test_model()
+    framework.test_model(predict_subset=0.0001)
