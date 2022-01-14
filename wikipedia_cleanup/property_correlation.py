@@ -232,9 +232,8 @@ class PropertyCorrelationPredictor(Predictor):
 
     def predict_timeframe(
         self,
-        data_key: np.ndarray,
-        additional_data: np.ndarray,
-        columns: List[str],
+        data_key: pd.DataFrame,
+        additional_data: pd.DataFrame,
         current_day: date,
         timeframe: int,
     ) -> bool:
@@ -247,11 +246,12 @@ class PropertyCorrelationPredictor(Predictor):
         # (timeframe - delay range) area. If yes, return true, else false
         # Maybe decrease the delay range here or see how many related
         #  properties have changes here to increase precision, has to be tested
-        if len(additional_data) == 0:
+        if additional_data.empty:
             return False
-        col_idx = columns.index("value_valid_from")
-        future_data = additional_data[:, col_idx] > current_day
-        return np.any(future_data)
+        future_data = additional_data[
+            additional_data["value_valid_from"] > np.datetime64(current_day)
+        ]
+        return len(future_data) != 0
 
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         if identifier not in self.related_properties_lookup.keys():
