@@ -1,12 +1,10 @@
 import math
-from bisect import bisect_left
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from pandas.core.groupby import DataFrameGroupBy
 from sklearn.metrics import precision_recall_fscore_support
 from tqdm.auto import tqdm
 
@@ -63,12 +61,7 @@ class TrainAndPredictFramework:
         train_data = self.data[self.data["value_valid_from"] < self.test_start_date]
         self.predictor.fit(train_data.copy(), self.test_start_date, self.group_key)
 
-    def test_model(
-        self,
-        randomize: bool = False,
-        predict_subset: float = 1.0,
-        progress_report: bool = False,
-    ):
+    def test_model(self, randomize: bool = False, predict_subset: float = 1.0):
         keys = self.data["key"].unique()
         if randomize:
             np.random.shuffle(keys)
@@ -84,12 +77,9 @@ class TrainAndPredictFramework:
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
 
         single_percent_of_data = max(len(keys) // 100, 1)
-        key_map = self.data.groupby(["key"])
         progress_bar_it = tqdm(keys)
         for n_processed_keys, key in enumerate(progress_bar_it):
-            current_data, additional_current_data = self.select_current_data(
-                key, key_map
-            )
+            current_data, additional_current_data = self.select_current_data(key)
 
             timestamps = self.convert_timestamps(current_data)
             additional_timestamps = self.convert_timestamps(additional_current_data)
@@ -106,25 +96,22 @@ class TrainAndPredictFramework:
                 predictions[i].append(prediction)
             day_labels = [date in timestamps for date in test_dates]
             all_day_labels.append(day_labels)
-            if progress_report:
-                if n_processed_keys % single_percent_of_data == 0:
-                    stats = self.evaluate_predictions(
-                        predictions, all_day_labels, False
-                    )
-                    if stats:
-                        stats_dict = {
-                            "🌒🎯D_pr": stats[0][0][1],
-                            "🌒📞D_rc": stats[0][1][1],
-                            "🌓🎯W_pc": stats[1][0][1],
-                            "🌓📞W_rc": stats[1][1][1],
-                        }
-                        progress_bar_it.set_postfix(stats_dict, refresh=False)
+            if n_processed_keys % single_percent_of_data == 0:
+                stats = self.evaluate_predictions(predictions, all_day_labels, False)
+                if stats:
+                    stats_dict = {
+                        "🌒🎯D_pr": stats[0][0][1],
+                        "🌒📞D_rc": stats[0][1][1],
+                        "🌓🎯W_pc": stats[1][0][1],
+                        "🌓📞W_rc": stats[1][1][1],
+                    }
+                    progress_bar_it.set_postfix(stats_dict, refresh=False)
 
         return self.evaluate_predictions(predictions, all_day_labels)
 
     @staticmethod
-    def convert_timestamps(data: pd.DataFrame) -> List[date]:
-        return data["value_valid_from"].dt.date.tolist()
+    def convert_timestamps(data: pd.DataFrame) -> np.ndarray:
+        return data["value_valid_from"].dt.date.to_numpy()
 
     def evaluate_predictions(
         self,
@@ -152,70 +139,57 @@ class TrainAndPredictFramework:
 
     @staticmethod
     def get_data_until(
-        data: np.ndarray, timestamps: List[date], timestamp: date, offset: int
-    ) -> Tuple[np.ndarray, int]:
+        data: pd.DataFrame, timestamps: np.ndarray, timestamp: date
+    ) -> pd.DataFrame:
         if len(data) > 0:
-            offset = bisect_left(timestamps, timestamp)
-            return data[:offset], offset
+            offset = np.searchsorted(
+                timestamps,
+                timestamp,
+                side="left",
+            )
+            return data.iloc[:offset]
         else:
-            return data, 0
+            return data
 
     def make_prediction(
         self,
         current_data: pd.DataFrame,
-        timestamps: List[date],
+        timestamps: np.ndarray,
         additional_current_data: pd.DataFrame,
-        additional_timestamps: List[date],
+        additional_timestamps: np.ndarray,
         test_dates: List[date],
     ) -> List[List[bool]]:
         current_page_predictions: List[List[bool]] = [
             [] for _ in self.testing_timeframes
         ]
-        current_data = current_data.to_numpy()
-        columns = list(additional_current_data.columns)
-        additional_current_data = additional_current_data.to_numpy()
-        additional_offset = 0
-        train_offset = 0
+
         for days_evaluated, current_date in enumerate(test_dates):
-            train_input, train_offset = self.get_data_until(
-                current_data, timestamps, current_date, train_offset
-            )
+            train_input = self.get_data_until(current_data, timestamps, current_date)
             for i, timeframe in enumerate(self.testing_timeframes):
                 if days_evaluated % timeframe == 0:
-                    additional_train_input, additional_offset = self.get_data_until(
+                    additional_train_input = self.get_data_until(
                         additional_current_data,
                         additional_timestamps,
                         current_date + timedelta(days=timeframe),
-                        additional_offset,
                     )
 
                     current_page_predictions[i].append(
                         self.predictor.predict_timeframe(
-                            train_input,
-                            additional_train_input,
-                            columns,
-                            current_date,
-                            timeframe,
+                            train_input, additional_train_input, current_date, timeframe
                         )
                     )
         return current_page_predictions
 
-    def select_current_data(
-        self, key: Tuple, key_map: DataFrameGroupBy
-    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def select_current_data(self, key: Tuple) -> Tuple[pd.DataFrame, pd.DataFrame]:
         relevant_keys = self.predictor.get_relevant_ids(key).copy()
 
-        current_data = key_map.get_group(key).sort_values(by=["value_valid_from"])
+        current_data = self.data[self.data["key"] == key].sort_values(
+            by=["value_valid_from"]
+        )
         relevant_keys = list(filter(key.__ne__, relevant_keys))
-        if len(relevant_keys) != 0:
-            additional_current_data = [
-                key_map.get_group(relevant_key) for relevant_key in relevant_keys
-            ]
-            additional_current_data = pd.concat(additional_current_data).sort_values(
-                by=["value_valid_from"]
-            )
-        else:
-            additional_current_data = self.data.iloc[:0]
+        additional_current_data = self.data[
+            self.data["key"].isin(relevant_keys)
+        ].sort_values(by=["value_valid_from"])
         return current_data, additional_current_data
 
     def aggregate_labels(self, labels: np.ndarray, n: int) -> np.ndarray:
@@ -273,6 +247,7 @@ if __name__ == "__main__":
 
     model = PropertyCorrelationPredictor()
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
+    # framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
-    framework.test_model(predict_subset=0.001)
+    framework.test_model(predict_subset=0.0001)
