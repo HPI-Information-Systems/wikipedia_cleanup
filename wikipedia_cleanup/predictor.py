@@ -21,8 +21,9 @@ class Predictor(ABC):
     @abstractmethod
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
         current_day: date,
         timeframe: int,
     ) -> bool:
@@ -41,8 +42,9 @@ class ZeroPredictor(Predictor):
 
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
         current_day: date,
         timeframe: int,
     ) -> bool:
@@ -59,8 +61,9 @@ class ZeroPredictor(Predictor):
 class OnePredictor(ZeroPredictor):
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
         current_day: date,
         timeframe: int,
     ) -> bool:
@@ -73,8 +76,9 @@ class RandomPredictor(ZeroPredictor):
 
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
         current_day: date,
         timeframe: int,
     ) -> bool:
@@ -84,8 +88,9 @@ class RandomPredictor(ZeroPredictor):
 class MeanPredictor(ZeroPredictor):
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
         current_day: date,
         timeframe: int,
     ) -> bool:
