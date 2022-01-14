@@ -138,7 +138,7 @@ class OnlyUpdatesDataFilter(AbstractDataFilter):
         filtered_changes = [
             change
             for change in changes
-            if change.previous_value and change.previous_value
+            if change.previous_value and change.current_value
         ]
         self._filter_stats.output_num_changes = len(filtered_changes)
         return filtered_changes

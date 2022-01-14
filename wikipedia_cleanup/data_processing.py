@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from wikipedia_cleanup.data_filter import (
@@ -131,11 +131,13 @@ def get_data(
     where each all files are sorted after
     (page_id, infobox_key, property_name, value_valid_from)
     """
+    if not Path(input_path).is_dir():
+        raise AttributeError("Expected to get a valid input path.")
     if filters is None:
         filters = []
     files = [x for x in Path(input_path).rglob("*.output.json") if x.is_file()]
     files.extend([x for x in Path(input_path).rglob("*.pickle") if x.is_file()])
-    files.sort()
+    files = sorted(files)
     files = files[slice(n_files)]
     n_jobs = min(n_jobs, len(files))
     if n_jobs > 1:
@@ -145,20 +147,23 @@ def get_data(
                 files,
                 itertools.repeat(filters),
                 max_workers=n_jobs,
+                total=len(files),
             )
         )
     else:
         all_changes = []
         mapped_filters = []
         for file, data_filters in tqdm(
-            zip(files, [deepcopy(filters) for _ in range(len(files))])
+            zip(files, [deepcopy(filters) for _ in range(len(files))]), total=len(files)
         ):
             changes_and_filters = read_and_filter_file(file, data_filters)
             all_changes.append(changes_and_filters[0])
             mapped_filters.append(changes_and_filters[1])
     all_changes = itertools.chain.from_iterable(all_changes)
     merge_filter_stats_into(mapped_filters, filters)
-    return pd.DataFrame([change.__dict__ for change in all_changes])
+    res_df = pd.DataFrame([change.__dict__ for change in all_changes])
+    sorted_columns = sorted(list(res_df.columns))
+    return res_df[sorted_columns]
 
 def get_data_single(
     file: Path,
