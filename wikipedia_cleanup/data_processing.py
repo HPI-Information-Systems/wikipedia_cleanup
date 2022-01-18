@@ -13,6 +13,7 @@ from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
     EditWarRevertsDataFilter,
     KeepAttributesDataFilter,
+    StaticInfoboxTemplateDataFilter,
     filter_changes_with,
     generate_default_filters,
     get_stats_from_filters,
@@ -169,6 +170,11 @@ if __name__ == "__main__":
         3,
     )
     filters = generate_default_filters()
+    filters.append(
+        StaticInfoboxTemplateDataFilter(
+            Path("/run/media/secret/manjaro-home/secret/mp-data/avg_dynamic.csv")
+        )
+    )
     get_data(
         Path(
             "/run/media/secret/manjaro-home/secret/mp-data/"
