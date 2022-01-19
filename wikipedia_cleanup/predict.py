@@ -1,12 +1,13 @@
+import itertools
 import math
+from bisect import bisect_left
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from line_profiler_pycharm import profile
-from pandas.core.groupby import DataFrameGroupBy
 from sklearn.metrics import precision_recall_fscore_support
 from tqdm.auto import tqdm
 
@@ -83,17 +84,28 @@ class TrainAndPredictFramework:
             for x in range(self.test_duration)
         ]
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
-
+        # its ok to discard the time and only retain the date
+        # since there is only one change per day.
+        self.data["value_valid_from"] = self.data["value_valid_from"].dt.date
+        columns = self.data.columns.tolist()
+        num_columns = len(columns)
+        value_valid_from_column_idx = columns.index("value_valid_from")
         single_percent_of_data = max(len(keys) // 100, 1)
+        key_map = {
+            key: np.array(list(group))
+            for key, group in itertools.groupby(self.data.to_numpy(), lambda x: x[-1])
+        }
+
         progress_bar_it = tqdm(keys)
-        key_map = self.data.groupby(["key"], sort=False)
         for n_processed_keys, key in enumerate(progress_bar_it):
             current_data, additional_current_data = self.select_current_data(
-                key, key_map
+                key, key_map, value_valid_from_column_idx, num_columns
             )
 
-            timestamps = self.convert_timestamps(current_data)
-            additional_timestamps = self.convert_timestamps(additional_current_data)
+            timestamps = current_data[:, value_valid_from_column_idx]
+            additional_timestamps = additional_current_data[
+                :, value_valid_from_column_idx
+            ]
 
             current_page_predictions = self.make_prediction(
                 current_data,
@@ -101,6 +113,7 @@ class TrainAndPredictFramework:
                 additional_current_data,
                 additional_timestamps,
                 test_dates,
+                columns,
             )
             # save labels and predictions
             for i, prediction in enumerate(current_page_predictions):
@@ -122,10 +135,6 @@ class TrainAndPredictFramework:
                         progress_bar_it.set_postfix(stats_dict, refresh=False)
 
         return self.evaluate_predictions(predictions, all_day_labels)
-
-    @staticmethod
-    def convert_timestamps(data: pd.DataFrame) -> np.ndarray:
-        return data["value_valid_from"].dt.date.to_numpy()
 
     def evaluate_predictions(
         self,
@@ -157,11 +166,12 @@ class TrainAndPredictFramework:
         data: np.ndarray, timestamps: np.ndarray, timestamp: date
     ) -> np.ndarray:
         if len(data) > 0:
-            offset = np.searchsorted(
+            offset = bisect_left(timestamps, timestamp)
+            """offset = np.searchsorted(
                 timestamps,
                 timestamp,
                 side="left",
-            )
+            )"""
             return data[:offset]
         else:
             return data
@@ -169,33 +179,31 @@ class TrainAndPredictFramework:
     @profile
     def make_prediction(
         self,
-        current_data: pd.DataFrame,
+        current_data: np.ndarray,
         timestamps: np.ndarray,
-        additional_current_data: pd.DataFrame,
+        related_current_data: np.ndarray,
         additional_timestamps: np.ndarray,
         test_dates: List[date],
+        columns: List[str],
     ) -> List[List[bool]]:
         current_page_predictions: List[List[bool]] = [
             [] for _ in self.testing_timeframes
         ]
-        columns = current_data.columns.tolist()
-        current_data = current_data.to_numpy()
-        additional_current_data = additional_current_data.to_numpy()
         for days_evaluated, first_day_to_predict in enumerate(test_dates):
-            train_input = self.get_data_until(
+            property_to_predict_data = self.get_data_until(
                 current_data, timestamps, first_day_to_predict
             )
             for i, timeframe in enumerate(self.testing_timeframes):
                 if days_evaluated % timeframe == 0:
-                    additional_train_input = self.get_data_until(
-                        additional_current_data,
+                    related_property_to_predict_data = self.get_data_until(
+                        related_current_data,
                         additional_timestamps,
                         first_day_to_predict + timedelta(days=timeframe),
                     )
                     current_page_predictions[i].append(
                         self.predictor.predict_timeframe(
-                            train_input,
-                            additional_train_input,
+                            property_to_predict_data,
+                            related_property_to_predict_data,
                             columns,
                             first_day_to_predict,
                             timeframe,
@@ -203,22 +211,28 @@ class TrainAndPredictFramework:
                     )
         return current_page_predictions
 
+    @profile
     def select_current_data(
-        self, key: Tuple, key_map: DataFrameGroupBy
-    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        self,
+        key: Tuple,
+        key_map: Dict[Any, np.ndarray],
+        value_valid_from_column_idx: int,
+        num_columns: int,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        current_data = key_map[key]
         relevant_keys = self.predictor.get_relevant_ids(key).copy()
 
-        current_data = key_map.get_group(key)
         relevant_keys = list(filter(key.__ne__, relevant_keys))
         if len(relevant_keys) != 0:
-            additional_current_data = [
-                key_map.get_group(relevant_key) for relevant_key in relevant_keys
-            ]
-            additional_current_data = pd.concat(additional_current_data).sort_values(
-                by=["value_valid_from"]
+            additional_current_data_gen = (
+                key_map[relevant_key] for relevant_key in relevant_keys
             )
+            additional_current_data = np.concatenate(additional_current_data_gen)
+            additional_current_data = additional_current_data[
+                additional_current_data[:, value_valid_from_column_idx].argsort()
+            ]
         else:
-            additional_current_data = self.data.iloc[:0]
+            additional_current_data = np.empty((0, num_columns))
         return current_data, additional_current_data
 
     def aggregate_labels(self, labels: np.ndarray, n: int) -> np.ndarray:
@@ -270,7 +284,7 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 4
+    n_files = 20
     n_jobs = 1
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
@@ -281,4 +295,4 @@ if __name__ == "__main__":
     # framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
-    framework.test_model(predict_subset=0.05)
+    framework.test_model(predict_subset=0.01)
