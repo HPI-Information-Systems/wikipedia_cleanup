@@ -118,7 +118,8 @@ class TrainAndPredictFramework:
             # save labels and predictions
             for i, prediction in enumerate(current_page_predictions):
                 predictions[i].append(prediction)
-            day_labels = [date in timestamps for date in test_dates]
+            timestamps_set = set(timestamps)
+            day_labels = [date in timestamps_set for date in test_dates]
             all_day_labels.append(day_labels)
             if estimate_stats:
                 if n_processed_keys % single_percent_of_data == 0:
@@ -224,10 +225,10 @@ class TrainAndPredictFramework:
 
         relevant_keys = list(filter(key.__ne__, relevant_keys))
         if len(relevant_keys) != 0:
-            additional_current_data_gen = (
+            additional_current_data_list = [
                 key_map[relevant_key] for relevant_key in relevant_keys
-            )
-            additional_current_data = np.concatenate(additional_current_data_gen)
+            ]
+            additional_current_data = np.concatenate(additional_current_data_list)
             additional_current_data = additional_current_data[
                 additional_current_data[:, value_valid_from_column_idx].argsort()
             ]
