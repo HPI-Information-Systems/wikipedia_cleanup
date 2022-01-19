@@ -73,7 +73,7 @@ class RandomForestPredictor(Predictor):
             sample = train_data.iloc[start:start+iloc]
             start+=iloc
             sample = sample.drop(columns=keys)
-            X = sample.drop(columns=['days_until_next_change','value_valid_from', 'key'])
+            X = sample[self.get_relevant_attributes()].drop(columns=['value_valid_from', 'days_until_next_change'])
             y = sample['days_until_next_change']
             reg = RandomForestClassifier(random_state=0, n_estimators=100, max_features="auto")
             reg.fit(X, y)
