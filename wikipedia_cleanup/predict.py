@@ -85,13 +85,17 @@ class TrainAndPredictFramework:
         ]
 
         # precalculate all predict day, week, month, year entries to reuse them
-        enumerated_testing_timeframes = list(enumerate(self.testing_timeframes))
         test_dates_with_testing_timeframes = []
         for days_evaluated, first_day_to_predict in enumerate(test_dates):
             curr_testing_timeframes = []
-            for i, timeframe in enumerated_testing_timeframes:
+            for idx, timeframe in enumerate(self.testing_timeframes):
                 if days_evaluated % timeframe == 0:
-                    curr_testing_timeframes.append((timeframe, i))
+                    prediction_end_date = first_day_to_predict + timedelta(
+                        days=timeframe
+                    )
+                    curr_testing_timeframes.append(
+                        (timeframe, prediction_end_date, idx)
+                    )
             test_dates_with_testing_timeframes.append(
                 (first_day_to_predict, curr_testing_timeframes)
             )
@@ -192,7 +196,9 @@ class TrainAndPredictFramework:
         timestamps: np.ndarray,
         related_current_data: np.ndarray,
         additional_timestamps: np.ndarray,
-        test_dates_with_testing_timeframes: List[Tuple[date, List[Tuple[int, int]]]],
+        test_dates_with_testing_timeframes: List[
+            Tuple[date, List[Tuple[int, date, int]]]
+        ],
         columns: List[str],
     ) -> List[List[bool]]:
         current_page_predictions: List[List[bool]] = [
@@ -205,13 +211,13 @@ class TrainAndPredictFramework:
             property_to_predict_data = self.get_data_until(
                 current_data, timestamps, first_day_to_predict
             )
-            for timeframe, i in curr_testing_timeframes:
+            for timeframe, prediction_end_date, idx in curr_testing_timeframes:
                 related_property_to_predict_data = self.get_data_until(
                     related_current_data,
                     additional_timestamps,
-                    first_day_to_predict + timedelta(days=timeframe),
+                    prediction_end_date,
                 )
-                current_page_predictions[i].append(
+                current_page_predictions[idx].append(
                     self.predictor.predict_timeframe(
                         property_to_predict_data,
                         related_property_to_predict_data,
