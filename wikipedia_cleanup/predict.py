@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from line_profiler_pycharm import profile
+from pandas.core.groupby import DataFrameGroupBy
 from sklearn.metrics import precision_recall_fscore_support
 from tqdm.auto import tqdm
 
@@ -85,8 +86,11 @@ class TrainAndPredictFramework:
 
         single_percent_of_data = max(len(keys) // 100, 1)
         progress_bar_it = tqdm(keys)
+        key_map = self.data.groupby(["key"], sort=False)
         for n_processed_keys, key in enumerate(progress_bar_it):
-            current_data, additional_current_data = self.select_current_data(key)
+            current_data, additional_current_data = self.select_current_data(
+                key, key_map
+            )
 
             timestamps = self.convert_timestamps(current_data)
             additional_timestamps = self.convert_timestamps(additional_current_data)
@@ -148,6 +152,7 @@ class TrainAndPredictFramework:
         return None
 
     @staticmethod
+    @profile
     def get_data_until(
         data: np.ndarray, timestamps: np.ndarray, timestamp: date
     ) -> np.ndarray:
@@ -198,16 +203,22 @@ class TrainAndPredictFramework:
                     )
         return current_page_predictions
 
-    def select_current_data(self, key: Tuple) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def select_current_data(
+        self, key: Tuple, key_map: DataFrameGroupBy
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         relevant_keys = self.predictor.get_relevant_ids(key).copy()
 
-        current_data = self.data[self.data["key"] == key].sort_values(
-            by=["value_valid_from"]
-        )
+        current_data = key_map.get_group(key)
         relevant_keys = list(filter(key.__ne__, relevant_keys))
-        additional_current_data = self.data[
-            self.data["key"].isin(relevant_keys)
-        ].sort_values(by=["value_valid_from"])
+        if len(relevant_keys) != 0:
+            additional_current_data = [
+                key_map.get_group(relevant_key) for relevant_key in relevant_keys
+            ]
+            additional_current_data = pd.concat(additional_current_data).sort_values(
+                by=["value_valid_from"]
+            )
+        else:
+            additional_current_data = self.data.iloc[:0]
         return current_data, additional_current_data
 
     def aggregate_labels(self, labels: np.ndarray, n: int) -> np.ndarray:
