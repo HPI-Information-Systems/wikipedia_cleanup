@@ -83,6 +83,19 @@ class TrainAndPredictFramework:
             (self.test_start_date + timedelta(days=x)).date()
             for x in range(self.test_duration)
         ]
+
+        # precalculate all predict day, week, month, year entries to reuse them
+        enumerated_testing_timeframes = list(enumerate(self.testing_timeframes))
+        test_dates_with_testing_timeframes = []
+        for days_evaluated, first_day_to_predict in enumerate(test_dates):
+            curr_testing_timeframes = []
+            for i, timeframe in enumerated_testing_timeframes:
+                if days_evaluated % timeframe == 0:
+                    curr_testing_timeframes.append((timeframe, i))
+            test_dates_with_testing_timeframes.append(
+                (first_day_to_predict, curr_testing_timeframes)
+            )
+
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
         # its ok to discard the time and only retain the date
         # since there is only one change per day.
@@ -112,7 +125,7 @@ class TrainAndPredictFramework:
                 timestamps,
                 additional_current_data,
                 additional_timestamps,
-                test_dates,
+                test_dates_with_testing_timeframes,
                 columns,
             )
             # save labels and predictions
@@ -168,11 +181,6 @@ class TrainAndPredictFramework:
     ) -> np.ndarray:
         if len(data) > 0:
             offset = bisect_left(timestamps, timestamp)
-            """offset = np.searchsorted(
-                timestamps,
-                timestamp,
-                side="left",
-            )"""
             return data[:offset]
         else:
             return data
@@ -184,32 +192,34 @@ class TrainAndPredictFramework:
         timestamps: np.ndarray,
         related_current_data: np.ndarray,
         additional_timestamps: np.ndarray,
-        test_dates: List[date],
+        test_dates_with_testing_timeframes: List[Tuple[date, List[Tuple[int, int]]]],
         columns: List[str],
     ) -> List[List[bool]]:
         current_page_predictions: List[List[bool]] = [
             [] for _ in self.testing_timeframes
         ]
-        for days_evaluated, first_day_to_predict in enumerate(test_dates):
+        for (
+            first_day_to_predict,
+            curr_testing_timeframes,
+        ) in test_dates_with_testing_timeframes:
             property_to_predict_data = self.get_data_until(
                 current_data, timestamps, first_day_to_predict
             )
-            for i, timeframe in enumerate(self.testing_timeframes):
-                if days_evaluated % timeframe == 0:
-                    related_property_to_predict_data = self.get_data_until(
-                        related_current_data,
-                        additional_timestamps,
-                        first_day_to_predict + timedelta(days=timeframe),
+            for timeframe, i in curr_testing_timeframes:
+                related_property_to_predict_data = self.get_data_until(
+                    related_current_data,
+                    additional_timestamps,
+                    first_day_to_predict + timedelta(days=timeframe),
+                )
+                current_page_predictions[i].append(
+                    self.predictor.predict_timeframe(
+                        property_to_predict_data,
+                        related_property_to_predict_data,
+                        columns,
+                        first_day_to_predict,
+                        timeframe,
                     )
-                    current_page_predictions[i].append(
-                        self.predictor.predict_timeframe(
-                            property_to_predict_data,
-                            related_property_to_predict_data,
-                            columns,
-                            first_day_to_predict,
-                            timeframe,
-                        )
-                    )
+                )
         return current_page_predictions
 
     @profile
@@ -286,7 +296,7 @@ class TrainAndPredictFramework:
 
 if __name__ == "__main__":
     n_files = 20
-    n_jobs = 1
+    n_jobs = 4
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
