@@ -21,9 +21,10 @@ class Predictor(ABC):
     @abstractmethod
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
-        current_day: date,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
+        first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
         raise NotImplementedError()
@@ -41,9 +42,10 @@ class ZeroPredictor(Predictor):
 
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
-        current_day: date,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
+        first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
         return False
@@ -59,9 +61,10 @@ class ZeroPredictor(Predictor):
 class OnePredictor(ZeroPredictor):
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
-        current_day: date,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
+        first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
         return True
@@ -73,9 +76,10 @@ class RandomPredictor(ZeroPredictor):
 
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
-        current_day: date,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
+        first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
         return random.random() <= self.p
@@ -84,15 +88,18 @@ class RandomPredictor(ZeroPredictor):
 class MeanPredictor(ZeroPredictor):
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
-        current_day: date,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
+        first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
         pred = self.next_change(data_key)
         if pred is None:
             return False
-        return current_day <= pred <= current_day + timedelta(timeframe)
+        return (
+            first_day_to_predict <= pred <= first_day_to_predict + timedelta(timeframe)
+        )
 
     @staticmethod
     def next_change(time_series: pd.DataFrame) -> Optional[date]:
