@@ -107,6 +107,4 @@ class RandomForestPredictor(Predictor):
             self.last_preds[data_key['key'].iloc[0]]=[sample['value_valid_from'].iloc[0],pred]
         else:
             pred = self.last_preds[data_key['key'].iloc[0]][1]
-        return pd.to_datetime(current_day) <= (sample['value_valid_from'].iloc[0] + timedelta(days=pred)) <= pd.to_datetime(current_day) + timedelta(timeframe)
-        # This has higher daily precision
-        # return (sample['value_valid_from'].iloc[0] + timedelta(days=pred)) == pd.to_datetime(current_day)
+        return pd.to_datetime(current_day) <= (sample['value_valid_from'].iloc[0] + timedelta(days=pred)) < pd.to_datetime(current_day) + timedelta(timeframe)
