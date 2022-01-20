@@ -18,6 +18,7 @@ class RandomForestPredictor(Predictor):
     def __init__(self, use_cache: bool = True) -> None:
         super().__init__()
         self.regressors: dict = {}
+        self.last_preds: dict = {}
         self.hash_location = Path("cache") / self.__class__.__name__
         self.use_hash = use_cache    
 
@@ -78,6 +79,8 @@ class RandomForestPredictor(Predictor):
             reg = RandomForestClassifier(random_state=0, n_estimators=100, max_features="auto")
             reg.fit(X, y)
             self.regressors[sample['key'].iloc[0]] = reg
+            self.last_preds[sample['key'].iloc[0]] = [pd.Timestamp('1999-12-31'),0]
+
         if self.use_hash:
             possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
             with open(possible_cached_mapping, "wb") as f:
@@ -97,7 +100,13 @@ class RandomForestPredictor(Predictor):
         timeframe: int,
     ) -> bool:
         sample = data_key.tail(1)
-        reg = self.regressors[data_key['key'].iloc[0]]
-        X_test = sample[self.get_relevant_attributes()].drop(columns=['value_valid_from', 'days_until_next_change'])
-        pred = round(reg.predict(X_test)[0])
+        if self.last_preds[data_key['key'].iloc[0]][0]!=sample['value_valid_from'].iloc[0]:
+            reg = self.regressors[data_key['key'].iloc[0]]
+            X_test = sample[self.get_relevant_attributes()].drop(columns=['value_valid_from', 'days_until_next_change'])
+            pred = int(reg.predict(X_test)[0])
+            self.last_preds[data_key['key'].iloc[0]]=[sample['value_valid_from'].iloc[0],pred]
+        else:
+            pred = self.last_preds[data_key['key'].iloc[0]][1]
         return pd.to_datetime(current_day) <= (sample['value_valid_from'].iloc[0] + timedelta(days=pred)) <= pd.to_datetime(current_day) + timedelta(timeframe)
+        # This has higher daily precision
+        # return (sample['value_valid_from'].iloc[0] + timedelta(days=pred)) == pd.to_datetime(current_day)
