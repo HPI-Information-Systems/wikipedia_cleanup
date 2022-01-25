@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from line_profiler_pycharm import profile
 from sklearn.metrics import precision_recall_fscore_support
 from tqdm.auto import tqdm
 
@@ -64,7 +63,6 @@ class TrainAndPredictFramework:
         train_data = self.data[self.data["value_valid_from"] < self.test_start_date]
         self.predictor.fit(train_data.copy(), self.test_start_date, self.group_key)
 
-    @profile
     def test_model(
         self,
         randomize: bool = False,
@@ -179,7 +177,6 @@ class TrainAndPredictFramework:
         return None
 
     @staticmethod
-    @profile
     def get_data_until(
         data: np.ndarray, timestamps: np.ndarray, timestamp: date
     ) -> np.ndarray:
@@ -189,7 +186,6 @@ class TrainAndPredictFramework:
         else:
             return data
 
-    @profile
     def make_prediction(
         self,
         current_data: np.ndarray,
@@ -228,7 +224,6 @@ class TrainAndPredictFramework:
                 )
         return current_page_predictions
 
-    @profile
     def select_current_data(
         self,
         key: Tuple,
