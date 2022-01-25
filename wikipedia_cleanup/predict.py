@@ -101,7 +101,10 @@ class TrainAndPredictFramework:
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
         # its ok to discard the time and only retain the date
         # since there is only one change per day.
-        self.data["value_valid_from"] = self.data["value_valid_from"].dt.date
+        try:
+            self.data["value_valid_from"] = self.data["value_valid_from"].dt.date
+        except AttributeError:
+            pass
         columns = self.data.columns.tolist()
         num_columns = len(columns)
         value_valid_from_column_idx = columns.index("value_valid_from")
