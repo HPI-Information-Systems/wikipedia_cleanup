@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
 from sklearn.metrics import precision_recall_fscore_support
 from tqdm.auto import tqdm
 
@@ -32,6 +33,7 @@ class TrainAndPredictFramework:
         self.group_key = group_key
         self.testing_timeframes = [1, 7, 30, 365]
         self.timeframe_labels = ["day", "week", "month", "year"]
+        self.image_dir = Path("plots/")
 
         self.predictor = predictor
         own_relevant_attributes = ["value_valid_from"]
@@ -142,7 +144,7 @@ class TrainAndPredictFramework:
             if estimate_stats:
                 if n_processed_keys % single_percent_of_data == 0:
                     stats = self.evaluate_predictions(
-                        predictions, all_day_labels, False
+                        predictions, all_day_labels, [], plots=False, print_output=False
                     )
                     if stats:
                         stats_dict = {
@@ -153,12 +155,16 @@ class TrainAndPredictFramework:
                         }
                         progress_bar_it.set_postfix(stats_dict, refresh=False)
 
-        return self.evaluate_predictions(predictions, all_day_labels)
+        return self.evaluate_predictions(
+            predictions, all_day_labels, keys, plots=True, print_output=True
+        )
 
     def evaluate_predictions(
         self,
         predictions: List[List[List[bool]]],
         day_labels: List[List[bool]],
+        keys: List[Tuple[Any]],
+        plots: bool = False,
         print_output: bool = True,
     ) -> Optional[List]:
         if np.any(day_labels):
@@ -176,8 +182,84 @@ class TrainAndPredictFramework:
                 prediction_stats.append(
                     self.evaluate_prediction(y_true, y_hat, title, print_output)
                 )
+            if plots:
+                self.image_dir.mkdir(exist_ok=True, parents=True)
+                self.evaluate_metric_over_time(labels, predictions)
+                self.evaluate_bucketed_predictions(labels, predictions, keys)
             return prediction_stats
         return None
+
+    def evaluate_bucketed_predictions(self, labels, predictions, keys):
+        train_data = self.data[
+            self.data["value_valid_from"] < self.test_start_date.date()
+        ]
+        n_changes = train_data.groupby("key")["page_id"].count()
+        bucket_limits = [0, 5, 15, 50, 100, n_changes.max() + 1]
+        buckets = list(zip(bucket_limits[:-1], bucket_limits[1:]))
+
+        bucket_stats = []
+        for low, high in buckets:
+            keys_in_bucket = n_changes[(n_changes >= low) & (n_changes < high)].index
+            used_indices = pd.DataFrame(keys)[0].isin(keys_in_bucket).to_numpy()
+            cur_labels = [arr[used_indices] for arr in labels]
+            cur_predictions = [arr[used_indices] for arr in predictions]
+            for timeframe_label, timeframe_prediction in zip(
+                cur_labels, cur_predictions
+            ):
+                bucket_stats.append(
+                    self.evaluate_prediction(
+                        timeframe_label, timeframe_prediction, "", False
+                    )
+                )
+
+        plotting_df = pd.DataFrame(
+            np.array(bucket_stats)[..., :2, 1].reshape(-1, 2),
+            columns=["precision", "recall"],
+        )
+        plotting_df["timeframe"] = list([1, 7, 30, 365] * len(buckets))
+        plotting_df["bucket"] = list(
+            itertools.chain.from_iterable(([([i] * 4) for i in buckets]))
+        )
+        plotting_df = (
+            plotting_df.set_index(["timeframe", "bucket"])
+            .sort_index()
+            .reset_index()
+            .set_index(["bucket", "timeframe"])
+        )
+        plotting_df.plot(kind="bar")
+        plt.ylabel("score")
+        plt.savefig(self.image_dir / f"bucketed.png")
+
+    def evaluate_metric_over_time(self, labels, predictions):
+        for i, timeframe in enumerate(self.testing_timeframes[:-1]):
+            current_labels = labels[i]
+            current_predictions = predictions[i]
+            stats = [
+                precision_recall_fscore_support(
+                    current_labels[:, i],
+                    current_predictions[:, i],
+                    labels=[1],
+                    zero_division=0,
+                )
+                for i in range(current_labels.shape[1])
+            ]
+            prec = np.array([stat[0][0] for stat in stats])
+            rec = np.array([stat[1][0] for stat in stats])
+            plt.figure()
+            if timeframe == 1:
+                average = 5
+                prec = np.mean(np.reshape(prec, (-1, average)), axis=1)
+                rec = np.mean(np.reshape(rec, (-1, average)), axis=1)
+                plt.xlabel(f"time in {timeframe} day(s), averaged over 5 days")
+            else:
+                plt.xlabel(f"time in {timeframe} day(s)")
+
+            plt.plot(prec, label="precision")
+            plt.plot(rec, label="recall")
+            plt.ylabel("score")
+            plt.ylim((-0.05, 1.05))
+            plt.legend()
+            plt.savefig(self.image_dir / f"over_time_{timeframe}.png")
 
     @staticmethod
     def get_data_until(
@@ -288,7 +370,9 @@ class TrainAndPredictFramework:
     def evaluate_prediction(
         self, labels: np.ndarray, prediction: np.ndarray, title: str, print_output: bool
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        stats = precision_recall_fscore_support(labels.flatten(), prediction.flatten())
+        stats = precision_recall_fscore_support(
+            labels.flatten(), prediction.flatten(), zero_division=0
+        )
         total_positive_predictions = np.count_nonzero(prediction)
         if print_output:
             self.print_stats(stats, total_positive_predictions, title)
@@ -304,10 +388,11 @@ if __name__ == "__main__":
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
+    input_path = Path("../../data/custom-format-default-filtered")
 
     model = PropertyCorrelationPredictor()
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
     # framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
-    framework.test_model(predict_subset=0.01)
+    framework.test_model(predict_subset=1)
