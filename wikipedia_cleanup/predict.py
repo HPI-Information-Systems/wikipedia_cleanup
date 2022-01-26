@@ -216,9 +216,11 @@ class TrainAndPredictFramework:
             np.array(bucket_stats)[..., :2, 1].reshape(-1, 2),
             columns=["precision", "recall"],
         )
-        plotting_df["timeframe"] = list([1, 7, 30, 365] * len(buckets))
+        plotting_df["timeframe"] = list(self.testing_timeframes * len(buckets))
         plotting_df["bucket"] = list(
-            itertools.chain.from_iterable(([([i] * 4) for i in buckets]))
+            itertools.chain.from_iterable(
+                ([([i] * len(self.testing_timeframes)) for i in buckets])
+            )
         )
         plotting_df = (
             plotting_df.set_index(["timeframe", "bucket"])
