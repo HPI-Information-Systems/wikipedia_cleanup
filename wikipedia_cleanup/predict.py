@@ -17,7 +17,7 @@ from wikipedia_cleanup.data_filter import (
 )
 from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.predictor import Predictor
-from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
+from wikipedia_cleanup.random_forest import RandomForestPredictor
 
 
 class TrainAndPredictFramework:
@@ -193,7 +193,8 @@ class TrainAndPredictFramework:
         train_data = self.data[
             self.data["value_valid_from"] < self.test_start_date.date()
         ]
-        n_changes = train_data.groupby("key")["page_id"].count()
+
+        n_changes = train_data.groupby("key")["value_valid_from"].count()
         bucket_limits = [0, 5, 15, 50, 100, n_changes.max() + 1]
         buckets = list(zip(bucket_limits[:-1], bucket_limits[1:]))
 
@@ -392,16 +393,29 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 20
+    n_files = 2
     n_jobs = 4
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
-    input_path = Path("../../data/custom-format-default-filtered")
 
-    model = PropertyCorrelationPredictor()
+    model = RandomForestPredictor(use_cache=False)
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
-    # framework = TrainAndPredictFramework(model, ["page_id"])
+    framework.data = pd.read_csv(
+        "/run/media/secret/manjaro-home/secret/mp-data/popular_data_with_features2.csv"
+    )[:100000]
+    framework.data["value_valid_from"] = pd.to_datetime(
+        framework.data["timestamp"]
+    ).dt.tz_localize(None)
+    group_key = ["infobox_key", "property_name"]
+    framework.data["key"] = list(
+        zip(*[framework.data[group_key] for group_key in framework.group_key])
+    )
+    framework.fit_model()
+    framework.test_model(predict_subset=1.0, randomize=False)
+
+    """model = PropertyCorrelationPredictor(use_cache=False)
+    framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
-    framework.test_model(predict_subset=1)
+    framework.test_model(predict_subset=1.0, randomize=False)"""
