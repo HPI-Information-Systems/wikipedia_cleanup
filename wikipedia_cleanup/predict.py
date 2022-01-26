@@ -18,6 +18,7 @@ from wikipedia_cleanup.data_filter import (
 from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.predictor import Predictor
 from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
+from wikipedia_cleanup.utils import plot_directory
 
 
 class TrainAndPredictFramework:
@@ -33,7 +34,6 @@ class TrainAndPredictFramework:
         self.group_key = group_key
         self.testing_timeframes = [1, 7, 30, 365]
         self.timeframe_labels = ["day", "week", "month", "year"]
-        self.image_dir = Path("plots/")
 
         self.predictor = predictor
         own_relevant_attributes = ["value_valid_from"]
@@ -183,7 +183,7 @@ class TrainAndPredictFramework:
                     self.evaluate_prediction(y_true, y_hat, title, print_output)
                 )
             if plots:
-                self.image_dir.mkdir(exist_ok=True, parents=True)
+                plot_directory().mkdir(exist_ok=True, parents=True)
                 self.evaluate_metric_over_time(labels, predictions)
                 self.evaluate_bucketed_predictions(labels, predictions, keys)
             return prediction_stats
@@ -230,7 +230,7 @@ class TrainAndPredictFramework:
         )
         plotting_df.plot(kind="bar")
         plt.ylabel("score")
-        plt.savefig(self.image_dir / "bucketed.png", bbox_inches="tight")
+        plt.savefig(plot_directory() / "bucketed.png", bbox_inches="tight")
 
     def evaluate_metric_over_time(self, labels, predictions):
         for i, timeframe in enumerate(self.testing_timeframes[:-1]):
@@ -267,7 +267,7 @@ class TrainAndPredictFramework:
             plt.ylim((-0.05, 1.05))
             plt.legend()
             plt.savefig(
-                self.image_dir / f"over_time_{timeframe}.png", bbox_inches="tight"
+                plot_directory() / f"over_time_{timeframe}.png", bbox_inches="tight"
             )
 
     @staticmethod

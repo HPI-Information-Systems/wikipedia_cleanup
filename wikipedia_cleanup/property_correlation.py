@@ -12,6 +12,7 @@ from sklearn.neighbors import NearestNeighbors
 from tqdm.auto import tqdm
 
 from wikipedia_cleanup.predictor import Predictor
+from wikipedia_cleanup.utils import cache_directory
 
 
 class PropertyCorrelationPredictor(Predictor):
@@ -23,7 +24,7 @@ class PropertyCorrelationPredictor(Predictor):
     def __init__(self, allowed_change_delay: int = 3, use_cache: bool = True) -> None:
         super().__init__()
         self.related_properties_lookup: dict = {}
-        self.hash_location = Path("cache") / self.__class__.__name__
+        self.hash_location = cache_directory() / self.__class__.__name__
 
         self.use_hash = use_cache
         # TODO justify choice
