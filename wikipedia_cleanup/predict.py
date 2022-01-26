@@ -209,7 +209,7 @@ class TrainAndPredictFramework:
         train_data = self.data[
             self.data["value_valid_from"] < self.test_start_date.date()
         ]
-        n_changes = train_data.groupby("key")["page_id"].count()
+        n_changes = train_data.groupby("key")["value_valid_from"].count()
         bucket_limits = [0, 5, 15, 50, 100, n_changes.max() + 1]
         buckets = list(zip(bucket_limits[:-1], bucket_limits[1:]))
 

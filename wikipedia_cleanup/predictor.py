@@ -94,7 +94,8 @@ class MeanPredictor(ZeroPredictor):
         first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
-        pred = self.next_change(data_key)
+        col_idx = columns.index("value_valid_from")
+        pred = self.next_change(data_key[:, col_idx])
         if pred is None:
             return False
         return (
@@ -102,15 +103,12 @@ class MeanPredictor(ZeroPredictor):
         )
 
     @staticmethod
-    def next_change(time_series: pd.DataFrame) -> Optional[date]:
-        previous_change_timestamps = time_series["value_valid_from"].to_numpy()
-        if len(previous_change_timestamps) < 2:
+    def next_change(time_series: np.ndarray) -> Optional[date]:
+        if len(time_series) < 2:
             return None
 
         mean_time_to_change: np.timedelta64 = np.mean(
-            previous_change_timestamps[1:] - previous_change_timestamps[0:-1]
+            time_series[1:] - time_series[0:-1]
         )
-        return_value: np.datetime64 = (
-            previous_change_timestamps[-1] + mean_time_to_change
-        )
+        return_value: np.datetime64 = time_series[-1] + mean_time_to_change
         return pd.to_datetime(return_value).date()
