@@ -228,7 +228,7 @@ class TrainAndPredictFramework:
         )
         plotting_df.plot(kind="bar")
         plt.ylabel("score")
-        plt.savefig(self.image_dir / f"bucketed.png")
+        plt.savefig(self.image_dir / "bucketed.png", bbox_inches="tight")
 
     def evaluate_metric_over_time(self, labels, predictions):
         for i, timeframe in enumerate(self.testing_timeframes[:-1]):
@@ -255,11 +255,18 @@ class TrainAndPredictFramework:
                 plt.xlabel(f"time in {timeframe} day(s)")
 
             plt.plot(prec, label="precision")
+            # trend line
+            x = list(range(len(prec)))
+            multidim_pol = np.polyfit(x, prec, 1)
+            simple_pol = np.poly1d(multidim_pol)
+            plt.plot(x, simple_pol(x), "r--", color="grey")
             plt.plot(rec, label="recall")
             plt.ylabel("score")
             plt.ylim((-0.05, 1.05))
             plt.legend()
-            plt.savefig(self.image_dir / f"over_time_{timeframe}.png")
+            plt.savefig(
+                self.image_dir / f"over_time_{timeframe}.png", bbox_inches="tight"
+            )
 
     @staticmethod
     def get_data_until(
@@ -339,7 +346,7 @@ class TrainAndPredictFramework:
             padded_labels = np.pad(labels, ((0, 0), (0, (n - self.test_duration) % n)))
         else:
             padded_labels = labels
-        padded_labels = padded_labels.reshape(labels.shape[0], -1, n)
+        padded_labels = padded_labels.reshape((labels.shape[0], -1, n))
         return np.any(padded_labels, axis=2)
 
     @staticmethod
