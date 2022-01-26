@@ -2,13 +2,13 @@ import itertools
 import math
 from bisect import bisect_left
 from datetime import date, datetime, timedelta
+from multiprocessing import Pool
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import precision_recall_fscore_support
-from tqdm.auto import tqdm
 
 from wikipedia_cleanup.data_filter import (
     KeepAttributesDataFilter,
@@ -17,6 +17,33 @@ from wikipedia_cleanup.data_filter import (
 from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.predictor import Predictor
 from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
+
+
+def _multiprocess_inner_loop(
+    self, columns, key, key_map, test_dates, test_dates_with_testing_timeframes
+):
+    num_columns = len(columns)
+    value_valid_from_column_idx = columns.index("value_valid_from")
+    current_data, additional_current_data = self.select_current_data(
+        key, key_map, value_valid_from_column_idx, num_columns
+    )
+    timestamps = current_data[:, value_valid_from_column_idx]
+    additional_timestamps = additional_current_data[:, value_valid_from_column_idx]
+    current_page_predictions = self.make_prediction(
+        current_data,
+        timestamps,
+        additional_current_data,
+        additional_timestamps,
+        test_dates_with_testing_timeframes,
+        columns,
+    )
+    # save labels and predictions
+    timestamps_set = set(timestamps)
+    day_labels = [date in timestamps_set for date in test_dates]
+    # organization day_labels[n, 356]
+    # predictions[n_timeframes (dayly, weekly ...),n , 356]
+    # logger.warning('3')
+    return current_page_predictions, day_labels
 
 
 class TrainAndPredictFramework:
@@ -76,7 +103,7 @@ class TrainAndPredictFramework:
             print(f"Predicting only {predict_subset:.2%} percent of the data.")
             subset_idx = math.ceil(len(keys) * predict_subset)
             keys = keys[:subset_idx]
-        all_day_labels = []
+        all_day_labels: List[List[bool]] = []
         test_dates = [
             (self.test_start_date + timedelta(days=x)).date()
             for x in range(self.test_duration)
@@ -106,52 +133,32 @@ class TrainAndPredictFramework:
         except AttributeError:
             pass
         columns = self.data.columns.tolist()
-        num_columns = len(columns)
-        value_valid_from_column_idx = columns.index("value_valid_from")
-        single_percent_of_data = max(len(keys) // 100, 1)
+        # num_columns = len(columns)
+        # value_valid_from_column_idx = columns.index("value_valid_from")
+        # single_percent_of_data = max(len(keys) // 100, 1)
         key_map = {
             key: np.array(list(group))
             for key, group in itertools.groupby(self.data.to_numpy(), lambda x: x[-1])
         }
-
-        progress_bar_it = tqdm(keys)
+        with Pool(processes=6) as pool:
+            args = zip(
+                itertools.repeat(self),
+                itertools.repeat(columns),
+                keys,
+                itertools.repeat(key_map),
+                itertools.repeat(test_dates),
+                itertools.repeat(test_dates_with_testing_timeframes),
+            )
+            res = pool.starmap(_multiprocess_inner_loop, args, chunksize=len(keys) // 6)
+            print(res)
+        """progress_bar_it = tqdm(keys)
         for n_processed_keys, key in enumerate(progress_bar_it):
-            current_data, additional_current_data = self.select_current_data(
-                key, key_map, value_valid_from_column_idx, num_columns
-            )
-
-            timestamps = current_data[:, value_valid_from_column_idx]
-            additional_timestamps = additional_current_data[
-                :, value_valid_from_column_idx
-            ]
-
-            current_page_predictions = self.make_prediction(
-                current_data,
-                timestamps,
-                additional_current_data,
-                additional_timestamps,
-                test_dates_with_testing_timeframes,
-                columns,
-            )
-            # save labels and predictions
-            for i, prediction in enumerate(current_page_predictions):
-                predictions[i].append(prediction)
-            timestamps_set = set(timestamps)
-            day_labels = [date in timestamps_set for date in test_dates]
-            all_day_labels.append(day_labels)
-            if estimate_stats:
-                if n_processed_keys % single_percent_of_data == 0:
-                    stats = self.evaluate_predictions(
-                        predictions, all_day_labels, False
-                    )
-                    if stats:
-                        stats_dict = {
-                            "🌒🎯D_pr": stats[0][0][1],
-                            "🌒📞D_rc": stats[0][1][1],
-                            "🌓🎯W_pc": stats[1][0][1],
-                            "🌓📞W_rc": stats[1][1][1],
-                        }
-                        progress_bar_it.set_postfix(stats_dict, refresh=False)
+            self.multiprocess_inner_loop(all_day_labels, columns, estimate_stats,
+            key, key_map, n_processed_keys,
+                                         num_columns, predictions, progress_bar_it,
+                                         single_percent_of_data, test_dates,
+                                         test_dates_with_testing_timeframes,
+                                         value_valid_from_column_idx)"""
 
         return self.evaluate_predictions(predictions, all_day_labels)
 
@@ -300,10 +307,8 @@ class TrainAndPredictFramework:
 
 if __name__ == "__main__":
     n_files = 20
-    n_jobs = 4
-    input_path = Path(
-        "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
-    )
+    n_jobs = 1
+    input_path = Path("/run/media/secret/manjaro-home/secret/mp-data/filtered-subset")
 
     model = PropertyCorrelationPredictor()
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])

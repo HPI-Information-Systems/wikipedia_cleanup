@@ -3,6 +3,7 @@
 personal-knowledge.txt
 garbage
 cache
+*.pclprof
 
 .vscode
 .DS_Store
