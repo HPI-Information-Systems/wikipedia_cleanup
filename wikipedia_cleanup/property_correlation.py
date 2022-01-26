@@ -219,22 +219,12 @@ class PropertyCorrelationPredictor(Predictor):
         possible_cached_mapping = self.hash_location / hash_id
         return possible_cached_mapping
 
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
-        return [
-            "page_id",
-            "infobox_key",
-            "page_title",
-            "property_name",
-            "value_valid_from",
-            "current_value",
-        ]
-
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
-        current_day: date,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
+        first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
         # pass in which data point we are supposed to predict
@@ -246,12 +236,21 @@ class PropertyCorrelationPredictor(Predictor):
         # (timeframe - delay range) area. If yes, return true, else false
         # Maybe decrease the delay range here or see how many related
         #  properties have changes here to increase precision, has to be tested
-        if additional_data.empty:
+        if len(additional_data) == 0:
             return False
-        future_data = additional_data[
-            additional_data["value_valid_from"] > np.datetime64(current_day)
+        col_idx = columns.index("value_valid_from")
+        return additional_data[-1:, col_idx] >= first_day_to_predict
+
+    @staticmethod
+    def get_relevant_attributes() -> List[str]:
+        return [
+            "page_id",
+            "infobox_key",
+            "page_title",
+            "property_name",
+            "value_valid_from",
+            "current_value",
         ]
-        return len(future_data) != 0
 
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         if identifier not in self.related_properties_lookup.keys():
