@@ -16,9 +16,10 @@ from wikipedia_cleanup.utils import cache_directory
 
 
 class PropertyCorrelationPredictor(Predictor):
-    # TODO justify choice
+
     NUM_REQUIRED_CHANGES = 5
     MAX_ALLOWED_PROPERTIES = 55  # Set via boxplot whisker for all links (53)
+    # TODO justify choice
     PERCENT_ALLOWED_MISMATCHES = 0.05
 
     def __init__(self, allowed_change_delay: int = 3, use_cache: bool = True) -> None:

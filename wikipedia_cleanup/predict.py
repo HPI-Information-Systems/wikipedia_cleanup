@@ -71,34 +71,13 @@ class TrainAndPredictFramework:
         predict_subset: float = 1.0,
         estimate_stats: bool = False,
     ):
-        keys = self.data["key"].unique()
-        if randomize:
-            np.random.shuffle(keys)
-        if predict_subset < 1:
-            print(f"Predicting only {predict_subset:.2%} percent of the data.")
-            subset_idx = math.ceil(len(keys) * predict_subset)
-            keys = keys[:subset_idx]
+        keys = self.initialize_keys(randomize, predict_subset)
         all_day_labels = []
-        test_dates = [
-            (self.test_start_date + timedelta(days=x)).date()
-            for x in range(self.test_duration)
-        ]
 
-        # precalculate all predict day, week, month, year entries to reuse them
-        test_dates_with_testing_timeframes = []
-        for days_evaluated, first_day_to_predict in enumerate(test_dates):
-            curr_testing_timeframes = []
-            for idx, timeframe in enumerate(self.testing_timeframes):
-                if days_evaluated % timeframe == 0:
-                    prediction_end_date = first_day_to_predict + timedelta(
-                        days=timeframe
-                    )
-                    curr_testing_timeframes.append(
-                        (timeframe, prediction_end_date, idx)
-                    )
-            test_dates_with_testing_timeframes.append(
-                (first_day_to_predict, curr_testing_timeframes)
-            )
+        (
+            test_dates,
+            test_dates_with_testing_timeframes,
+        ) = self.calculate_test_date_metadata()
 
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
         # its ok to discard the time and only retain the date
@@ -110,7 +89,7 @@ class TrainAndPredictFramework:
         columns = self.data.columns.tolist()
         num_columns = len(columns)
         value_valid_from_column_idx = columns.index("value_valid_from")
-        single_percent_of_data = max(len(keys) // 100, 1)
+        ten_percent_of_data = max(len(keys) // 10, 1)
         key_map = {
             key: np.array(list(group))
             for key, group in itertools.groupby(self.data.to_numpy(), lambda x: x[-1])
@@ -139,10 +118,10 @@ class TrainAndPredictFramework:
             for i, prediction in enumerate(current_page_predictions):
                 predictions[i].append(prediction)
             timestamps_set = set(timestamps)
-            day_labels = [date in timestamps_set for date in test_dates]
+            day_labels = [test_date in timestamps_set for test_date in test_dates]
             all_day_labels.append(day_labels)
             if estimate_stats:
-                if n_processed_keys % single_percent_of_data == 0:
+                if n_processed_keys % ten_percent_of_data == 0:
                     stats = self.evaluate_predictions(
                         predictions, all_day_labels, [], plots=False, print_output=False
                     )
@@ -158,6 +137,43 @@ class TrainAndPredictFramework:
         return self.evaluate_predictions(
             predictions, all_day_labels, keys, plots=True, print_output=True
         )
+
+    def initialize_keys(self, randomize: bool, predict_subset: float):
+        keys = self.data["key"].unique()
+        if randomize:
+            np.random.shuffle(keys)
+        if predict_subset < 1:
+            print(f"Predicting only {predict_subset:.2%} percent of the data.")
+            subset_idx = math.ceil(len(keys) * predict_subset)
+            keys = keys[:subset_idx]
+        return keys
+
+    def calculate_test_date_metadata(
+        self,
+    ) -> Tuple[List[date], List[Tuple[date, List[Tuple[int, date, int]]]]]:
+        test_dates = [
+            (self.test_start_date + timedelta(days=x)).date()
+            for x in range(self.test_duration)
+        ]
+
+        # precalculate all predict day, week, month, year entries to reuse them
+        test_dates_with_testing_timeframes = []
+        for days_evaluated, first_day_to_predict in enumerate(test_dates):
+            curr_testing_timeframes = []
+            for idx, timeframe in enumerate(self.testing_timeframes):
+                if days_evaluated % timeframe == 0:
+                    prediction_end_date = first_day_to_predict + timedelta(
+                        days=timeframe
+                    )
+                    curr_testing_timeframes.append(
+                        (timeframe, prediction_end_date, idx)
+                    )
+            test_dates_with_testing_timeframes.append(
+                (first_day_to_predict, curr_testing_timeframes)
+            )
+        # test_dates_with_testing_timeframes has the format:
+        # first_date, [timeframe, end_date, timeframe_idx]
+        return test_dates, test_dates_with_testing_timeframes
 
     def evaluate_predictions(
         self,
