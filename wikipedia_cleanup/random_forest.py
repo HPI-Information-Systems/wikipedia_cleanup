@@ -20,22 +20,22 @@ class RandomForestPredictor(Predictor):
         self.regressors: dict = {}
         self.last_preds: dict = {}
         self.hash_location = Path("cache") / self.__class__.__name__
-        self.use_hash = use_cache    
+        self.use_hash = use_cache
 
     @staticmethod
     def get_relevant_ids(identifier: Tuple) -> List[Tuple]:
         return []
-    
+
     @staticmethod
     def get_relevant_attributes() -> List[str]:
         return [
             "value_valid_from",
-            "day_of_year", # values from feature engineering
+            "day_of_year",  # values from feature engineering
             "day_of_month",
-            "day_of_week", 
+            "day_of_week",
             "month_of_year",
             "quarter_of_year",
-            "is_month_start", 
+            "is_month_start",
             "is_month_end",
             "is_quarter_start",
             "days_since_last_change",
@@ -43,7 +43,7 @@ class RandomForestPredictor(Predictor):
             "days_since_last_3_changes",
             "days_between_last_and_2nd_to_last_change",
             "days_until_next_change",
-            "mean_change_frequency_all_previous",
+            "mean_change_frequency_all_previous",  # check if this really improves the prediction
             "mean_change_frequency_last_3"
         ]
 
@@ -67,19 +67,22 @@ class RandomForestPredictor(Predictor):
             possible_cached_mapping = self._calculate_cache_name(train_data)
             if self._load_cache(possible_cached_mapping):
                 return
-        ilocs = train_data.groupby(keys,sort=False).count()["value_valid_from"]
+        ilocs = train_data.groupby(keys, sort=False).count()["value_valid_from"]
         # Assumption: data is already sorted by keys so no further sorting needs to be done
-        start=0
+        start = 0
         for iloc in tqdm(ilocs):
+            # maybe dont train if we are below a trainsize threshold
             sample = train_data.iloc[start:start+iloc]
-            start+=iloc
+            start += iloc
             sample = sample.drop(columns=keys)
-            X = sample[self.get_relevant_attributes()].drop(columns=['value_valid_from', 'days_until_next_change'])
+            X = sample[self.get_relevant_attributes()].drop(
+                columns=['value_valid_from', 'days_until_next_change'])
             y = sample['days_until_next_change']
-            reg = RandomForestClassifier(random_state=0, n_estimators=100, max_features="auto")
+            reg = RandomForestClassifier(
+                random_state=0, n_estimators=10, max_features="auto")
             reg.fit(X, y)
             self.regressors[sample['key'].iloc[0]] = reg
-            self.last_preds[sample['key'].iloc[0]] = [pd.Timestamp('1999-12-31'),0]
+            self.last_preds[sample['key'].iloc[0]] = [pd.Timestamp('1999-12-31'), 0]
 
         if self.use_hash:
             possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
@@ -99,12 +102,18 @@ class RandomForestPredictor(Predictor):
         current_day: date,
         timeframe: int,
     ) -> bool:
+        if len(data_key) == 0 or data_key['key'].iloc[0] not in self.regressors:
+            # checks if model has been trained for the key (it didnt if there was no traindata)
+            return False
+
         sample = data_key.tail(1)
-        if self.last_preds[data_key['key'].iloc[0]][0]!=sample['value_valid_from'].iloc[0]:
+        if self.last_preds[data_key['key'].iloc[0]][0] != sample['value_valid_from'].iloc[0]:
             reg = self.regressors[data_key['key'].iloc[0]]
-            X_test = sample[self.get_relevant_attributes()].drop(columns=['value_valid_from', 'days_until_next_change'])
+            X_test = sample[self.get_relevant_attributes()].drop(
+                columns=['value_valid_from', 'days_until_next_change'])
             pred = int(reg.predict(X_test)[0])
-            self.last_preds[data_key['key'].iloc[0]]=[sample['value_valid_from'].iloc[0],pred]
+            self.last_preds[data_key['key'].iloc[0]] = [
+                sample['value_valid_from'].iloc[0], pred]
         else:
             pred = self.last_preds[data_key['key'].iloc[0]][1]
         return pd.to_datetime(current_day) <= (sample['value_valid_from'].iloc[0] + timedelta(days=pred)) < pd.to_datetime(current_day) + timedelta(timeframe)
