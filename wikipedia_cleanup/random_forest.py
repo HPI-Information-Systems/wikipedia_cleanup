@@ -1,20 +1,18 @@
 import hashlib
 import pickle
-import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
 from tqdm.auto import tqdm
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
 from wikipedia_cleanup.predictor import Predictor
 
 
 class RandomForestPredictor(Predictor):
-
     def __init__(self, use_cache: bool = True) -> None:
         super().__init__()
         self.regressors: dict = {}
@@ -43,8 +41,9 @@ class RandomForestPredictor(Predictor):
             "days_since_last_3_changes",
             "days_between_last_and_2nd_to_last_change",
             "days_until_next_change",
-            "mean_change_frequency_all_previous",  # check if this really improves the prediction
-            "mean_change_frequency_last_3"
+            "mean_change_frequency_all_previous",
+            # check if this really improves the prediction
+            "mean_change_frequency_last_3",
         ]
 
     def _load_cache(self, possible_cached_mapping: Path) -> bool:
@@ -68,21 +67,24 @@ class RandomForestPredictor(Predictor):
             if self._load_cache(possible_cached_mapping):
                 return
         ilocs = train_data.groupby(keys, sort=False).count()["value_valid_from"]
-        # Assumption: data is already sorted by keys so no further sorting needs to be done
+        # Assumption: data is already sorted by keys so
+        # no further sorting needs to be done
         start = 0
         for iloc in tqdm(ilocs):
             # maybe dont train if we are below a trainsize threshold
-            sample = train_data.iloc[start:start+iloc]
+            sample = train_data.iloc[start : start + iloc]
             start += iloc
             sample = sample.drop(columns=keys)
             X = sample[self.get_relevant_attributes()].drop(
-                columns=['value_valid_from', 'days_until_next_change'])
-            y = sample['days_until_next_change']
+                columns=["value_valid_from", "days_until_next_change"]
+            )
+            y = sample["days_until_next_change"]
             reg = RandomForestClassifier(
-                random_state=0, n_estimators=10, max_features="auto")
+                random_state=0, n_estimators=10, max_features="auto"
+            )
             reg.fit(X, y)
-            self.regressors[sample['key'].iloc[0]] = reg
-            self.last_preds[sample['key'].iloc[0]] = [pd.Timestamp('1999-12-31'), 0]
+            self.regressors[sample["key"].iloc[0]] = reg
+            self.last_preds[sample["key"].iloc[0]] = [pd.Timestamp("1999-12-31"), 0]
 
         if self.use_hash:
             possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
@@ -97,23 +99,38 @@ class RandomForestPredictor(Predictor):
 
     def predict_timeframe(
         self,
-        data_key: pd.DataFrame,
-        additional_data: pd.DataFrame,
-        current_day: date,
+        data_key: np.ndarray,
+        additional_data: np.ndarray,
+        columns: List[str],
+        first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
-        if len(data_key) == 0 or data_key['key'].iloc[0] not in self.regressors:
-            # checks if model has been trained for the key (it didnt if there was no traindata)
+        if len(data_key) == 0:
+            return False
+        key_column_idx = columns.index("key")
+        data_key_item = data_key[0, key_column_idx]
+        if data_key_item not in self.regressors:
+            # checks if model has been trained for the key
+            # (it didnt if there was no traindata)
             return False
 
-        sample = data_key.tail(1)
-        if self.last_preds[data_key['key'].iloc[0]][0] != sample['value_valid_from'].iloc[0]:
-            reg = self.regressors[data_key['key'].iloc[0]]
-            X_test = sample[self.get_relevant_attributes()].drop(
-                columns=['value_valid_from', 'days_until_next_change'])
+        value_valid_from_column_idx = columns.index("value_valid_from")
+        sample = data_key[-1, ...]
+        sample_value_valid_from = sample[value_valid_from_column_idx]
+        if self.last_preds[data_key_item][0] != sample_value_valid_from:
+            reg = self.regressors[data_key_item]
+            indices = [
+                columns.index(attr)
+                for attr in self.get_relevant_attributes()
+                if not (attr == "value_valid_from" or attr == "days_until_next_change")
+            ]
+            X_test = sample[indices].reshape(1, -1)
             pred = int(reg.predict(X_test)[0])
-            self.last_preds[data_key['key'].iloc[0]] = [
-                sample['value_valid_from'].iloc[0], pred]
+            self.last_preds[data_key_item] = [sample_value_valid_from, pred]
         else:
-            pred = self.last_preds[data_key['key'].iloc[0]][1]
-        return pd.to_datetime(current_day) <= (sample['value_valid_from'].iloc[0] + timedelta(days=pred)) < pd.to_datetime(current_day) + timedelta(timeframe)
+            pred = self.last_preds[data_key_item][1]
+        return (
+            first_day_to_predict
+            <= (sample_value_valid_from + timedelta(days=pred))
+            < first_day_to_predict + timedelta(timeframe)
+        )

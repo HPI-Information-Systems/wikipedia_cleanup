@@ -1,10 +1,13 @@
+import itertools
 import math
+from bisect import bisect_left
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
 from sklearn.metrics import precision_recall_fscore_support
 from tqdm.auto import tqdm
 
@@ -14,7 +17,7 @@ from wikipedia_cleanup.data_filter import (
 )
 from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.predictor import Predictor
-from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
+from wikipedia_cleanup.random_forest import RandomForestPredictor
 
 
 class TrainAndPredictFramework:
@@ -30,6 +33,7 @@ class TrainAndPredictFramework:
         self.group_key = group_key
         self.testing_timeframes = [1, 7, 30, 365]
         self.timeframe_labels = ["day", "week", "month", "year"]
+        self.image_dir = Path("plots/")
 
         self.predictor = predictor
         own_relevant_attributes = ["value_valid_from"]
@@ -61,7 +65,12 @@ class TrainAndPredictFramework:
         train_data = self.data[self.data["value_valid_from"] < self.test_start_date]
         self.predictor.fit(train_data.copy(), self.test_start_date, self.group_key)
 
-    def test_model(self, randomize: bool = False, predict_subset: float = 1.0):
+    def test_model(
+        self,
+        randomize: bool = False,
+        predict_subset: float = 1.0,
+        estimate_stats: bool = False,
+    ):
         keys = self.data["key"].unique()
         if randomize:
             np.random.shuffle(keys)
@@ -74,49 +83,88 @@ class TrainAndPredictFramework:
             (self.test_start_date + timedelta(days=x)).date()
             for x in range(self.test_duration)
         ]
-        predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
 
+        # precalculate all predict day, week, month, year entries to reuse them
+        test_dates_with_testing_timeframes = []
+        for days_evaluated, first_day_to_predict in enumerate(test_dates):
+            curr_testing_timeframes = []
+            for idx, timeframe in enumerate(self.testing_timeframes):
+                if days_evaluated % timeframe == 0:
+                    prediction_end_date = first_day_to_predict + timedelta(
+                        days=timeframe
+                    )
+                    curr_testing_timeframes.append(
+                        (timeframe, prediction_end_date, idx)
+                    )
+            test_dates_with_testing_timeframes.append(
+                (first_day_to_predict, curr_testing_timeframes)
+            )
+
+        predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
+        # its ok to discard the time and only retain the date
+        # since there is only one change per day.
+        try:
+            self.data["value_valid_from"] = self.data["value_valid_from"].dt.date
+        except AttributeError:
+            pass
+        columns = self.data.columns.tolist()
+        num_columns = len(columns)
+        value_valid_from_column_idx = columns.index("value_valid_from")
         single_percent_of_data = max(len(keys) // 100, 1)
+        key_map = {
+            key: np.array(list(group))
+            for key, group in itertools.groupby(self.data.to_numpy(), lambda x: x[-1])
+        }
+
         progress_bar_it = tqdm(keys)
         for n_processed_keys, key in enumerate(progress_bar_it):
-            current_data, additional_current_data = self.select_current_data(key)
+            current_data, additional_current_data = self.select_current_data(
+                key, key_map, value_valid_from_column_idx, num_columns
+            )
 
-            timestamps = self.convert_timestamps(current_data)
-            additional_timestamps = self.convert_timestamps(additional_current_data)
+            timestamps = current_data[:, value_valid_from_column_idx]
+            additional_timestamps = additional_current_data[
+                :, value_valid_from_column_idx
+            ]
 
             current_page_predictions = self.make_prediction(
                 current_data,
                 timestamps,
                 additional_current_data,
                 additional_timestamps,
-                test_dates,
+                test_dates_with_testing_timeframes,
+                columns,
             )
             # save labels and predictions
             for i, prediction in enumerate(current_page_predictions):
                 predictions[i].append(prediction)
-            day_labels = [date in timestamps for date in test_dates]
+            timestamps_set = set(timestamps)
+            day_labels = [date in timestamps_set for date in test_dates]
             all_day_labels.append(day_labels)
-            if n_processed_keys % single_percent_of_data == 0:
-                stats = self.evaluate_predictions(predictions, all_day_labels, False)
-                if stats:
-                    stats_dict = {
-                        "🌒🎯D_pr": stats[0][0][1],
-                        "🌒📞D_rc": stats[0][1][1],
-                        "🌓🎯W_pc": stats[1][0][1],
-                        "🌓📞W_rc": stats[1][1][1],
-                    }
-                    progress_bar_it.set_postfix(stats_dict, refresh=False)
+            if estimate_stats:
+                if n_processed_keys % single_percent_of_data == 0:
+                    stats = self.evaluate_predictions(
+                        predictions, all_day_labels, [], plots=False, print_output=False
+                    )
+                    if stats:
+                        stats_dict = {
+                            "🌒🎯D_pr": stats[0][0][1],
+                            "🌒📞D_rc": stats[0][1][1],
+                            "🌓🎯W_pc": stats[1][0][1],
+                            "🌓📞W_rc": stats[1][1][1],
+                        }
+                        progress_bar_it.set_postfix(stats_dict, refresh=False)
 
-        return self.evaluate_predictions(predictions, all_day_labels)
-
-    @staticmethod
-    def convert_timestamps(data: pd.DataFrame) -> np.ndarray:
-        return data["value_valid_from"].dt.date.to_numpy()
+        return self.evaluate_predictions(
+            predictions, all_day_labels, keys, plots=True, print_output=True
+        )
 
     def evaluate_predictions(
         self,
         predictions: List[List[List[bool]]],
         day_labels: List[List[bool]],
+        keys: List[Tuple[Any]],
+        plots: bool = False,
         print_output: bool = True,
     ) -> Optional[List]:
         if np.any(day_labels):
@@ -134,62 +182,164 @@ class TrainAndPredictFramework:
                 prediction_stats.append(
                     self.evaluate_prediction(y_true, y_hat, title, print_output)
                 )
+            if plots:
+                self.image_dir.mkdir(exist_ok=True, parents=True)
+                self.evaluate_metric_over_time(labels, predictions)
+                self.evaluate_bucketed_predictions(labels, predictions, keys)
             return prediction_stats
         return None
 
+    def evaluate_bucketed_predictions(self, labels, predictions, keys):
+        train_data = self.data[
+            self.data["value_valid_from"] < self.test_start_date.date()
+        ]
+
+        n_changes = train_data.groupby("key")["value_valid_from"].count()
+        bucket_limits = [0, 5, 15, 50, 100, n_changes.max() + 1]
+        buckets = list(zip(bucket_limits[:-1], bucket_limits[1:]))
+
+        bucket_stats = []
+        for low, high in buckets:
+            keys_in_bucket = n_changes[(n_changes >= low) & (n_changes < high)].index
+            used_indices = pd.DataFrame(keys)[0].isin(keys_in_bucket).to_numpy()
+            cur_labels = [arr[used_indices] for arr in labels]
+            cur_predictions = [arr[used_indices] for arr in predictions]
+            for timeframe_label, timeframe_prediction in zip(
+                cur_labels, cur_predictions
+            ):
+                bucket_stats.append(
+                    self.evaluate_prediction(
+                        timeframe_label, timeframe_prediction, "", False
+                    )
+                )
+
+        plotting_df = pd.DataFrame(
+            np.array(bucket_stats)[..., :2, 1].reshape(-1, 2),
+            columns=["precision", "recall"],
+        )
+        plotting_df["timeframe"] = list(self.testing_timeframes * len(buckets))
+        plotting_df["bucket"] = list(
+            itertools.chain.from_iterable(
+                ([([i] * len(self.testing_timeframes)) for i in buckets])
+            )
+        )
+        plotting_df = (
+            plotting_df.set_index(["timeframe", "bucket"])
+            .sort_index()
+            .reset_index()
+            .set_index(["bucket", "timeframe"])
+        )
+        plotting_df.plot(kind="bar")
+        plt.ylabel("score")
+        plt.savefig(self.image_dir / "bucketed.png", bbox_inches="tight")
+
+    def evaluate_metric_over_time(self, labels, predictions):
+        for i, timeframe in enumerate(self.testing_timeframes[:-1]):
+            current_labels = labels[i]
+            current_predictions = predictions[i]
+            stats = [
+                precision_recall_fscore_support(
+                    current_labels[:, i],
+                    current_predictions[:, i],
+                    labels=[1],
+                    zero_division=0,
+                )
+                for i in range(current_labels.shape[1])
+            ]
+            prec = np.array([stat[0][0] for stat in stats])
+            rec = np.array([stat[1][0] for stat in stats])
+            plt.figure()
+            if timeframe == 1:
+                average = 5
+                prec = np.mean(np.reshape(prec, (-1, average)), axis=1)
+                rec = np.mean(np.reshape(rec, (-1, average)), axis=1)
+                plt.xlabel(f"time in {timeframe} day(s), averaged over 5 days")
+            else:
+                plt.xlabel(f"time in {timeframe} day(s)")
+
+            plt.plot(prec, label="precision")
+            # trend line
+            x = list(range(len(prec)))
+            multidim_pol = np.polyfit(x, prec, 1)
+            simple_pol = np.poly1d(multidim_pol)
+            plt.plot(x, simple_pol(x), "r--", color="grey")
+            plt.plot(rec, label="recall")
+            plt.ylabel("score")
+            plt.ylim((-0.05, 1.05))
+            plt.legend()
+            plt.savefig(
+                self.image_dir / f"over_time_{timeframe}.png", bbox_inches="tight"
+            )
+
     @staticmethod
     def get_data_until(
-        data: pd.DataFrame, timestamps: np.ndarray, timestamp: date
-    ) -> pd.DataFrame:
+        data: np.ndarray, timestamps: np.ndarray, timestamp: date
+    ) -> np.ndarray:
         if len(data) > 0:
-            offset = np.searchsorted(
-                timestamps,
-                timestamp,
-                side="left",
-            )
-            return data.iloc[:offset]
+            offset = bisect_left(timestamps, timestamp)
+            return data[:offset]
         else:
             return data
 
     def make_prediction(
         self,
-        current_data: pd.DataFrame,
+        current_data: np.ndarray,
         timestamps: np.ndarray,
-        additional_current_data: pd.DataFrame,
+        related_current_data: np.ndarray,
         additional_timestamps: np.ndarray,
-        test_dates: List[date],
+        test_dates_with_testing_timeframes: List[
+            Tuple[date, List[Tuple[int, date, int]]]
+        ],
+        columns: List[str],
     ) -> List[List[bool]]:
         current_page_predictions: List[List[bool]] = [
             [] for _ in self.testing_timeframes
         ]
-
-        for days_evaluated, current_date in enumerate(test_dates):
-            train_input = self.get_data_until(current_data, timestamps, current_date)
-            for i, timeframe in enumerate(self.testing_timeframes):
-                if days_evaluated % timeframe == 0:
-                    additional_train_input = self.get_data_until(
-                        additional_current_data,
-                        additional_timestamps,
-                        current_date + timedelta(days=timeframe),
+        for (
+            first_day_to_predict,
+            curr_testing_timeframes,
+        ) in test_dates_with_testing_timeframes:
+            property_to_predict_data = self.get_data_until(
+                current_data, timestamps, first_day_to_predict
+            )
+            for timeframe, prediction_end_date, idx in curr_testing_timeframes:
+                related_property_to_predict_data = self.get_data_until(
+                    related_current_data,
+                    additional_timestamps,
+                    prediction_end_date,
+                )
+                current_page_predictions[idx].append(
+                    self.predictor.predict_timeframe(
+                        property_to_predict_data,
+                        related_property_to_predict_data,
+                        columns,
+                        first_day_to_predict,
+                        timeframe,
                     )
-
-                    current_page_predictions[i].append(
-                        self.predictor.predict_timeframe(
-                            train_input, additional_train_input, current_date, timeframe
-                        )
-                    )
+                )
         return current_page_predictions
 
-    def select_current_data(self, key: Tuple) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def select_current_data(
+        self,
+        key: Tuple,
+        key_map: Dict[Any, np.ndarray],
+        value_valid_from_column_idx: int,
+        num_columns: int,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        current_data = key_map[key]
         relevant_keys = self.predictor.get_relevant_ids(key).copy()
 
-        current_data = self.data[self.data["key"] == key].sort_values(
-            by=["value_valid_from"]
-        )
         relevant_keys = list(filter(key.__ne__, relevant_keys))
-        additional_current_data = self.data[
-            self.data["key"].isin(relevant_keys)
-        ].sort_values(by=["value_valid_from"])
+        if len(relevant_keys) != 0:
+            additional_current_data_list = [
+                key_map[relevant_key] for relevant_key in relevant_keys
+            ]
+            additional_current_data = np.concatenate(additional_current_data_list)
+            additional_current_data = additional_current_data[
+                additional_current_data[:, value_valid_from_column_idx].argsort()
+            ]
+        else:
+            additional_current_data = np.empty((0, num_columns))
         return current_data, additional_current_data
 
     def aggregate_labels(self, labels: np.ndarray, n: int) -> np.ndarray:
@@ -199,7 +349,7 @@ class TrainAndPredictFramework:
             padded_labels = np.pad(labels, ((0, 0), (0, (n - self.test_duration) % n)))
         else:
             padded_labels = labels
-        padded_labels = padded_labels.reshape(labels.shape[0], -1, n)
+        padded_labels = padded_labels.reshape((labels.shape[0], -1, n))
         return np.any(padded_labels, axis=2)
 
     @staticmethod
@@ -230,7 +380,9 @@ class TrainAndPredictFramework:
     def evaluate_prediction(
         self, labels: np.ndarray, prediction: np.ndarray, title: str, print_output: bool
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        stats = precision_recall_fscore_support(labels.flatten(), prediction.flatten())
+        stats = precision_recall_fscore_support(
+            labels.flatten(), prediction.flatten(), zero_division=0
+        )
         total_positive_predictions = np.count_nonzero(prediction)
         if print_output:
             self.print_stats(stats, total_positive_predictions, title)
@@ -241,13 +393,29 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 1
-    n_jobs = 1
-    input_path = Path("../../data/custom-format-default-filtered/")
+    n_files = 2
+    n_jobs = 4
+    input_path = Path(
+        "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
+    )
 
-    model = PropertyCorrelationPredictor()
+    model = RandomForestPredictor(use_cache=False)
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
-    # framework = TrainAndPredictFramework(model, ["page_id"])
+    framework.data = pd.read_csv(
+        "/run/media/secret/manjaro-home/secret/mp-data/popular_data_with_features2.csv"
+    )[:100000]
+    framework.data["value_valid_from"] = pd.to_datetime(
+        framework.data["timestamp"]
+    ).dt.tz_localize(None)
+    group_key = ["infobox_key", "property_name"]
+    framework.data["key"] = list(
+        zip(*[framework.data[group_key] for group_key in framework.group_key])
+    )
+    framework.fit_model()
+    framework.test_model(predict_subset=1.0, randomize=False)
+
+    """model = PropertyCorrelationPredictor(use_cache=False)
+    framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
-    framework.test_model(predict_subset=0.0001)
+    framework.test_model(predict_subset=1.0, randomize=False)"""
