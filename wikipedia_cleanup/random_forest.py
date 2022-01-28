@@ -71,13 +71,17 @@ class RandomForestPredictor(Predictor):
         # no further sorting needs to be done
         start = 0
         for iloc in tqdm(ilocs):
+            if iloc==1: continue
             # maybe dont train if we are below a trainsize threshold
             sample = train_data.iloc[start : start + iloc]
             start += iloc
-            sample = sample.drop(columns=keys)
+            sample = sample.drop(columns=keys).iloc[:-1]
             X = sample[self.get_relevant_attributes()].drop(
                 columns=["value_valid_from", "days_until_next_change"]
             )
+            # test=sample.iloc[-1]
+            # test2=sample.iloc[0]
+            # print(X.shape)
             y = sample["days_until_next_change"]
             reg = RandomForestClassifier(
                 random_state=0, n_estimators=10, max_features="auto"
@@ -127,10 +131,12 @@ class RandomForestPredictor(Predictor):
             X_test = sample[indices].reshape(1, -1)
             pred = int(reg.predict(X_test)[0])
             self.last_preds[data_key_item] = [sample_value_valid_from, pred]
+            # print(pred)
         else:
             pred = self.last_preds[data_key_item][1]
+        # return True
         return (
             first_day_to_predict
-            <= (sample_value_valid_from + timedelta(days=pred))
+            <= (sample_value_valid_from + timedelta(pred))
             < first_day_to_predict + timedelta(timeframe)
         )
