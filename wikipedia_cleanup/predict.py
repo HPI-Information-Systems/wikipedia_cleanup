@@ -36,7 +36,7 @@ class TrainAndPredictFramework:
         self.timeframe_labels = ["day", "week", "month", "year"]
 
         self.predictor = predictor
-        own_relevant_attributes = ["value_valid_from"]
+        own_relevant_attributes = ["value_valid_from", "template"]
         self.relevant_attributes = list(
             set(own_relevant_attributes)
             | set(predictor.get_relevant_attributes())
@@ -245,6 +245,51 @@ class TrainAndPredictFramework:
         plotting_df.plot(kind="bar")
         plt.ylabel("score")
         plt.savefig(plot_directory() / "bucketed.png", bbox_inches="tight")
+
+    def evaluate_template_predictions(self, labels, predictions, keys):
+        top_n_templates = 10
+        train_data = self.data[
+            self.data["value_valid_from"] < self.test_start_date.date()
+        ]
+        templates = train_data.groupby(["template"])
+        template_count = templates["value_valid_from"].count()
+        template_count = template_count.sort_values(ascending=False)
+        top_templates = template_count.head(top_n_templates).index.tolist()
+        keys_of_template = templates["key"].apply(set)
+
+        stats = []
+        for temp in top_templates:
+            current_keys = keys_of_template.loc[temp]
+            used_indices = [key in current_keys for key in keys]
+            cur_labels = [arr[used_indices] for arr in labels]
+            cur_predictions = [arr[used_indices] for arr in predictions]
+            for timeframe_label, timeframe_prediction in zip(
+                cur_labels, cur_predictions
+            ):
+                stats.append(
+                    self.evaluate_prediction(
+                        timeframe_label, timeframe_prediction, "", False
+                    )
+                )
+
+        plotting_df = pd.DataFrame(
+            np.array(stats)[..., :2, 1].reshape(-1, 2),
+            columns=["precision", "recall"],
+        )
+        plotting_df["timeframe"] = list(self.testing_timeframes * len(top_templates))
+        plotting_df["bucket"] = list(
+            itertools.chain.from_iterable(
+                ([([i] * len(self.testing_timeframes)) for i in top_templates])
+            )
+        )
+        plotting_df = (
+            plotting_df.set_index(["timeframe", "bucket"])
+            .sort_index()
+            .reset_index()
+            .set_index(["bucket", "timeframe"])
+        )
+        plotting_df.plot(kind="bar")
+        plt.ylabel("score")
 
     def evaluate_metric_over_time(self, labels, predictions):
         for i, timeframe in enumerate(self.testing_timeframes[:-1]):
