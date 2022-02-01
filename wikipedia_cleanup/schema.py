@@ -47,6 +47,25 @@ class InfoboxChange(BaseModel):
         return str(self.__dict__)
 
 
+class InfoboxChangeWithFeatures(InfoboxChange):
+    day_of_year: int
+    day_of_month: int
+    day_of_week: int
+    month_of_year: int
+    quarter_of_year: int
+    is_month_start: bool
+    is_month_end: bool
+    is_quarter_start: bool
+    is_quarter_end: bool
+    days_since_last_change: int
+    days_since_last_2_changes: int
+    days_since_last_3_changes: int
+    days_until_next_change: int
+    days_between_last_and_2nd_to_last_change: int
+    mean_change_frequency_all_previous: int
+    mean_change_frequency_last_3: int
+
+
 class SparseInfoboxChange:
     pass
 

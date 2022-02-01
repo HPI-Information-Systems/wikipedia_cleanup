@@ -5,7 +5,13 @@ from datetime import timedelta
 from pathlib import Path
 from typing import List
 
-from wikipedia_cleanup.schema import InfoboxChange, SparseInfoboxChange
+import pandas as pd
+
+from wikipedia_cleanup.schema import (
+    InfoboxChange,
+    InfoboxChangeWithFeatures,
+    SparseInfoboxChange,
+)
 
 INITIAL_STATS_VALUE = -1
 
@@ -255,6 +261,77 @@ class EditWarRevertsDataFilter(AbstractRevertsDataFilter):
             and (change_a.value_valid_to - change_a.value_valid_from)
             <= self.max_time_to_reverting_change
         )
+
+
+class FeatureAdder(AbstractDataFilter):
+    @abstractmethod
+    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        change_timestamps = pd.Series((change.value_valid_from for change in changes))
+        day_of_year = change_timestamps.dt.dayofyear
+        day_of_month = change_timestamps.dt.day
+        day_of_week = change_timestamps.dt.dayofweek
+        month_of_year = change_timestamps.dt.month
+        quarter_of_year = change_timestamps.dt.quarter
+        is_month_start = change_timestamps.dt.is_month_start
+        is_month_end = change_timestamps.dt.is_month_end
+        is_quarter_start = change_timestamps.dt.is_quarter_start
+        is_quarter_end = change_timestamps.dt.is_quarter_end
+
+        days_since_last_change = (
+            change_timestamps
+            - change_timestamps.shift(+1).fillna(pd.Timestamp("20990101"))
+        ).dt.days
+        days_since_last_change.loc[(days_since_last_change < 0)] = 0
+
+        days_since_last_2_changes = (
+            change_timestamps
+            - change_timestamps.shift(+2).fillna(pd.Timestamp("20990101"))
+        ).dt.days
+        days_since_last_2_changes.loc[(days_since_last_2_changes < 0)] = 0
+
+        days_since_last_3_changes = (
+            change_timestamps
+            - change_timestamps.shift(+3).fillna(pd.Timestamp("20990101"))
+        ).dt.days
+        days_since_last_3_changes.loc[(days_since_last_3_changes < 0)] = 0
+
+        days_until_next_change = days_since_last_change.shift(-1)
+        days_until_next_change = pd.to_numeric(
+            days_until_next_change.fillna(0), downcast="integer"
+        )
+
+        days_between_last_and_2nd_to_last_change = days_since_last_change.shift(+1)
+        days_between_last_and_2nd_to_last_change = pd.to_numeric(
+            days_between_last_and_2nd_to_last_change.fillna(0), downcast="integer"
+        )
+
+        mean_change_frequency_all_previous = days_since_last_change.mean()
+
+        mean_change_frequency_last_3 = days_since_last_change.rolling(3).mean()
+
+        changes_with_features: List[InfoboxChange] = []
+        for idx, change in enumerate(changes):
+            change_with_feature = InfoboxChangeWithFeatures(
+                day_of_year=day_of_year[idx],
+                day_of_month=day_of_month[idx],
+                day_of_week=day_of_week[idx],
+                month_of_year=month_of_year[idx],
+                quarter_of_year=quarter_of_year[idx],
+                is_month_start=is_month_start[idx],
+                is_month_end=is_month_end[idx],
+                is_quarter_start=is_quarter_start,
+                is_quarter_end=is_quarter_end,
+                days_since_last_change=days_since_last_change,
+                days_since_last_2_changes=days_since_last_2_changes,
+                days_since_last_3_changes=days_since_last_3_changes,
+                days_until_next_change=days_until_next_change,
+                days_between_last_and_2nd_to_last_change=days_between_last_and_2nd_to_last_change,  # noqa: E501
+                mean_change_frequency_all_previous=mean_change_frequency_all_previous,
+                mean_change_frequency_last_3=mean_change_frequency_last_3,
+                **change.__dict__,
+            )
+            changes_with_features.append(change_with_feature)
+        return changes_with_features
 
 
 def generate_default_filters() -> List[AbstractDataFilter]:
