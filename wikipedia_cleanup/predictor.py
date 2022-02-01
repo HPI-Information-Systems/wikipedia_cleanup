@@ -34,12 +34,21 @@ class Predictor(ABC):
         raise NotImplementedError()
 
 
-class ZeroPredictor(Predictor):
+class StaticPredictor(Predictor):
     def fit(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
         pass
 
+    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
+        return []
+
+    @staticmethod
+    def get_relevant_attributes() -> List[str]:
+        return []
+
+
+class ZeroPredictor(StaticPredictor):
     def predict_timeframe(
         self,
         data_key: np.ndarray,
@@ -50,15 +59,8 @@ class ZeroPredictor(Predictor):
     ) -> bool:
         return False
 
-    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
-        return [identifier]
 
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
-        return []
-
-
-class OnePredictor(ZeroPredictor):
+class OnePredictor(StaticPredictor):
     def predict_timeframe(
         self,
         data_key: np.ndarray,
@@ -70,7 +72,7 @@ class OnePredictor(ZeroPredictor):
         return True
 
 
-class RandomPredictor(ZeroPredictor):
+class RandomPredictor(StaticPredictor):
     def __init__(self, p: float = 0.5):
         self.p = p
 
@@ -101,6 +103,9 @@ class MeanPredictor(ZeroPredictor):
         return (
             first_day_to_predict <= pred <= first_day_to_predict + timedelta(timeframe)
         )
+
+    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
+        return [identifier]
 
     @staticmethod
     def next_change(time_series: np.ndarray) -> Optional[date]:
