@@ -394,7 +394,7 @@ class TrainAndPredictFramework:
         self, labels: np.ndarray, prediction: np.ndarray, title: str, print_output: bool
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         stats = precision_recall_fscore_support(
-            labels.flatten(), prediction.flatten(), zero_division=0
+            labels.reshape(-1), prediction.reshape(-1), zero_division=0
         )
         total_positive_predictions = np.count_nonzero(prediction)
         if print_output:
