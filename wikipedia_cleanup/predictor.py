@@ -34,7 +34,7 @@ class Predictor(ABC):
         raise NotImplementedError()
 
 
-class StaticPredictor(Predictor):
+class StaticPredictor(Predictor, ABC):
     def fit(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:

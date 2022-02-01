@@ -78,7 +78,7 @@ class TrainAndPredictFramework:
         ) = self.calculate_test_date_metadata()
 
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
-        # its ok to discard the time and only retain the date
+        # it's ok to discard the time and only retain the date
         # since there is only one change per day.
         try:
             self.data["value_valid_from"] = self.data["value_valid_from"].dt.date
@@ -115,8 +115,9 @@ class TrainAndPredictFramework:
             # save labels and predictions
             for i, prediction in enumerate(current_page_predictions):
                 predictions[i].append(prediction)
-            ts_set = set(timestamps)
-            all_day_labels.extend(test_date in ts_set for test_date in test_dates)
+            timestamps_set = set(timestamps)
+            day_labels = [test_date in timestamps_set for test_date in test_dates]
+            all_day_labels.append(day_labels)
             if estimate_stats:
                 if n_processed_keys % ten_percent_of_data == 0:
                     stats = self.evaluate_predictions(
@@ -405,7 +406,7 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 20
+    n_files = 2
     n_jobs = 4
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
@@ -417,4 +418,4 @@ if __name__ == "__main__":
     # framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
-    framework.test_model(predict_subset=1)
+    framework.test_model(predict_subset=0.1)
