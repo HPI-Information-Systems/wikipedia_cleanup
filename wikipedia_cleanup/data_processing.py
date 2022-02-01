@@ -161,9 +161,8 @@ def get_data(
             mapped_filters.append(changes_and_filters[1])
     all_changes = itertools.chain.from_iterable(all_changes)
     merge_filter_stats_into(mapped_filters, filters)
-    res_df = pd.DataFrame([change.__dict__ for change in all_changes])
-    sorted_columns = sorted(list(res_df.columns))
-    return res_df[sorted_columns]
+    res_df = pd.DataFrame(change.__dict__ for change in all_changes)
+    return res_df.sort_index(axis=1)
 
 
 # local test

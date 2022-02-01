@@ -38,11 +38,9 @@ class TrainAndPredictFramework:
         self.predictor = predictor
         own_relevant_attributes = ["value_valid_from"]
         self.relevant_attributes = list(
-            set(
-                own_relevant_attributes
-                + predictor.get_relevant_attributes()
-                + self.group_key
-            )
+            set(own_relevant_attributes)
+            | set(predictor.get_relevant_attributes())
+            | set(self.group_key)
         )
         self.data: pd.DataFrame = pd.DataFrame()
 
@@ -58,7 +56,7 @@ class TrainAndPredictFramework:
             None
         )
         self.data["key"] = list(
-            zip(*[self.data[group_key] for group_key in self.group_key])
+            zip(*(self.data[group_key] for group_key in self.group_key))
         )
 
     def fit_model(self):
@@ -117,9 +115,8 @@ class TrainAndPredictFramework:
             # save labels and predictions
             for i, prediction in enumerate(current_page_predictions):
                 predictions[i].append(prediction)
-            timestamps_set = set(timestamps)
-            day_labels = [test_date in timestamps_set for test_date in test_dates]
-            all_day_labels.append(day_labels)
+            ts_set = set(timestamps)
+            all_day_labels.extend(test_date in ts_set for test_date in test_dates)
             if estimate_stats:
                 if n_processed_keys % ten_percent_of_data == 0:
                     stats = self.evaluate_predictions(
