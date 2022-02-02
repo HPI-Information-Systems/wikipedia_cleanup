@@ -13,12 +13,13 @@ from wikipedia_cleanup.predictor import Predictor
 
 
 class RandomForestPredictor(Predictor):
-    def __init__(self, use_cache: bool = True) -> None:
+    def __init__(self, use_cache: bool = True, padding: bool = False) -> None:
         super().__init__()
         self.regressors: dict = {}
         self.last_preds: dict = {}
         self.hash_location = Path("cache") / self.__class__.__name__
         self.use_hash = use_cache
+        self.padding = padding
 
     @staticmethod
     def get_relevant_ids(identifier: Tuple) -> List[Tuple]:
@@ -38,13 +39,13 @@ class RandomForestPredictor(Predictor):
             "is_quarter_start",
             "is_quarter_end",
             "days_since_last_change",
-            "days_since_last_2_changes",
-            "days_since_last_3_changes",
-            "days_between_last_and_2nd_to_last_change",
+            #"days_since_last_2_changes",
+            #"days_since_last_3_changes",
+            #"days_between_last_and_2nd_to_last_change",
             "days_until_next_change",
-            "mean_change_frequency_all_previous",
+            #"mean_change_frequency_all_previous",
             # check if this really improves the prediction
-            "mean_change_frequency_last_3",
+            #"mean_change_frequency_last_3",
         ]
 
     def _load_cache(self, possible_cached_mapping: Path) -> bool:
@@ -75,18 +76,50 @@ class RandomForestPredictor(Predictor):
             if iloc == 1:
                 continue
             # maybe dont train if we are below a trainsize threshold
-            sample = train_data.iloc[start : start + iloc]
+            if self.padding: 
+                sample = train_data.iloc[start : start + iloc]
+                sample.loc[:,'is_change'] = True
+                ranges = sample['days_since_last_change'].apply(lambda x: list(range(1, x+1)))
+                ranges = np.append([0],np.concatenate(ranges.values).ravel())
+                revert_ranges = sample['days_since_last_change'].apply(lambda x: list(range(x+1, 1, -1)))
+                revert_ranges = np.append(np.concatenate(revert_ranges.values).ravel(), [0])
+                sample  = sample.set_index('value_valid_from')\
+                    .groupby(['infobox_key', 'property_name', 'template']).apply(lambda x: \
+                        x.reindex(pd.date_range(x.index.min(), x.index.max(), freq='D', name='value_valid_from')))\
+                        .drop(['infobox_key', 'property_name', 'template'], axis=1).reset_index()
+                sample.fillna(False, inplace=True)
+                sample["day_of_year"] = sample["value_valid_from"].dt.dayofyear
+                sample["day_of_month"] = sample["value_valid_from"].dt.day
+                sample["day_of_week"] = sample["value_valid_from"].dt.dayofweek
+                sample["month_of_year"] = sample["value_valid_from"].dt.month
+                sample["quarter_of_year"] = sample["value_valid_from"].dt.quarter
+                sample["is_month_start"] = sample["value_valid_from"].dt.is_month_start
+                sample["is_month_end"] = sample["value_valid_from"].dt.is_month_end
+                sample["is_quarter_start"] = sample["value_valid_from"].dt.is_quarter_start
+                sample["is_quarter_end"] = sample["value_valid_from"].dt.is_quarter_end
+                sample['days_since_last_change'] = ranges
+                sample['days_until_next_change'] = revert_ranges
+
+            else:
+                sample = train_data.iloc[start : start + iloc]
             start += iloc
             sample = sample.drop(columns=keys).iloc[:-1]
-            X = sample[self.get_relevant_attributes()].drop(
-                columns=["value_valid_from", "days_until_next_change"]
-            )
-            y = sample["days_until_next_change"]
+            if self.padding:
+                X = sample[self.get_relevant_attributes()].drop(
+                    columns=["value_valid_from","days_until_next_change"]
+                )
+                y = sample["is_change"]
+
+            else:
+                X = sample[self.get_relevant_attributes()].drop(
+                    columns=['value_valid_from', "days_until_next_change"]
+                )
+                y = sample["days_until_next_change"]
             reg = RandomForestClassifier(
                 random_state=0, n_estimators=10, max_features="auto"
             )
             reg.fit(X, y)
-            self.regressors[sample["key"].iloc[0]] = reg
+            self.regressors[sample["key"].iloc[0]] = reg # to refactor
             self.last_preds[sample["key"].iloc[0]] = [pd.Timestamp("1999-12-31"), 0]
 
         if self.use_hash:
@@ -112,30 +145,48 @@ class RandomForestPredictor(Predictor):
             return False
         key_column_idx = columns.index("key")
         data_key_item = data_key[0, key_column_idx]
+        value_valid_from_column_idx = columns.index("value_valid_from")
         if data_key_item not in self.regressors:
             # checks if model has been trained for the key
             # (it didnt if there was no traindata)
-            return False
+            return False        
+        if self.padding:
+            sample  = []
+            last_change = data_key[-1, value_valid_from_column_idx]
+            sample.append(first_day_to_predict.dt.dayofyear)
+            sample.append(first_day_to_predict.dt.day)
+            sample.append(first_day_to_predict.dt.dayofweek)
+            sample.append(first_day_to_predict.dt.month)
+            sample.append(first_day_to_predict.dt.quarter)
+            sample.append(first_day_to_predict.dt.is_month_start)
+            sample.append(first_day_to_predict.dt.is_month_end)
+            sample.append(first_day_to_predict.dt.is_quarter_start)
+            sample.append(first_day_to_predict.dt.is_quarter_end)
+            sample.append((first_day_to_predict - last_change).days)
+            sample_value_valid_from = sample[value_valid_from_column_idx]
 
-        value_valid_from_column_idx = columns.index("value_valid_from")
-        sample = data_key[-1, ...]
-        sample_value_valid_from = sample[value_valid_from_column_idx]
-        if self.last_preds[data_key_item][0] != sample_value_valid_from:
             reg = self.regressors[data_key_item]
-            indices = [
-                columns.index(attr)
-                for attr in self.get_relevant_attributes()
-                if not (attr == "value_valid_from" or attr == "days_until_next_change")
-            ]
-            X_test = sample[indices].reshape(1, -1)
-            pred = int(reg.predict(X_test)[0])
-            self.last_preds[data_key_item] = [sample_value_valid_from, pred]
-
+            X_test = sample#.reshape(1, -1)
+            pred = reg.predict(X_test)[0]
+            self.last_preds[data_key_item] = [first_day_to_predict, pred]
+            return pred
         else:
-            pred = self.last_preds[data_key_item][1]
-
-        return (
-            first_day_to_predict
-            <= (sample_value_valid_from + timedelta(pred))
-            < first_day_to_predict + timedelta(timeframe)
-        )
+            sample = data_key[-1, ...]
+            sample_value_valid_from = sample[value_valid_from_column_idx]
+            if self.last_preds[data_key_item][0] != sample_value_valid_from:
+                reg = self.regressors[data_key_item]
+                indices = [
+                    columns.index(attr)
+                    for attr in self.get_relevant_attributes()
+                    if not (attr == "value_valid_from" or attr == "days_until_next_change")
+                ]
+                X_test = sample[indices].reshape(1, -1)
+                pred = int(reg.predict(X_test)[0])
+                self.last_preds[data_key_item] = [sample_value_valid_from, pred]
+            else:
+                pred = self.last_preds[data_key_item][1]
+            # return True
+            return (
+                first_day_to_predict
+                <= (sample_value_valid_from + timedelta(pred))
+                < first_day_to_predict + timedelta(timeframe))
