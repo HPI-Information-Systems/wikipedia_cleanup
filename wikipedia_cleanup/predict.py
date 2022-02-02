@@ -12,6 +12,8 @@ from sklearn.metrics import precision_recall_fscore_support
 from tqdm.auto import tqdm
 
 from wikipedia_cleanup.data_filter import (
+    AbstractDataFilter,
+    FeatureAdderFilter,
     KeepAttributesDataFilter,
     OnlyUpdatesDataFilter,
 )
@@ -46,11 +48,26 @@ class TrainAndPredictFramework:
         )
         self.data: pd.DataFrame = pd.DataFrame()
 
-    def load_data(self, input_path: Path, n_files: int, n_jobs: int):
-        filters = [
-            OnlyUpdatesDataFilter(),
-            KeepAttributesDataFilter(self.relevant_attributes),
-        ]
+    def load_data(
+        self,
+        input_path: Path,
+        n_files: int,
+        n_jobs: int,
+        preceding_filters: List[AbstractDataFilter] = None,
+    ):
+        filters = []
+        if preceding_filters is not None:
+            print(
+                f"WARNING: Using additional non standard "
+                f"preceding filters for the data loading: {preceding_filters}"
+            )
+            filters.extend(preceding_filters)
+        filters.extend(
+            [
+                OnlyUpdatesDataFilter(),
+                KeepAttributesDataFilter(self.relevant_attributes),
+            ]
+        )
         self.data = get_data(
             input_path, n_files=n_files, n_jobs=n_jobs, filters=filters  # type: ignore
         )
@@ -401,7 +418,7 @@ if __name__ == "__main__":
 
     model = RandomForestPredictor(use_cache=False)
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
-    framework.data = pd.read_csv(
+    """framework.data = pd.read_csv(
         "/run/media/secret/manjaro-home/secret/mp-data/popular_data_with_features2.csv"
     )[:100000]
     framework.data["value_valid_from"] = pd.to_datetime(
@@ -410,6 +427,9 @@ if __name__ == "__main__":
     group_key = ["infobox_key", "property_name"]
     framework.data["key"] = list(
         zip(*[framework.data[group_key] for group_key in framework.group_key])
+    )"""
+    framework.load_data(
+        input_path, n_files, 1, preceding_filters=[FeatureAdderFilter()]
     )
     framework.fit_model()
     framework.test_model(predict_subset=1.0, randomize=False)

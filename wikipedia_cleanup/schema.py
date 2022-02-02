@@ -62,8 +62,8 @@ class InfoboxChangeWithFeatures(InfoboxChange):
     days_since_last_3_changes: int
     days_until_next_change: int
     days_between_last_and_2nd_to_last_change: int
-    mean_change_frequency_all_previous: int
-    mean_change_frequency_last_3: int
+    mean_change_frequency_all_previous: float
+    mean_change_frequency_last_3: float
 
 
 class SparseInfoboxChange:
