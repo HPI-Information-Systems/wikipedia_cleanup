@@ -406,16 +406,16 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 2
+    n_files = 4
     n_jobs = 4
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
-    input_path = Path("../../data/custom-format-default-filtered")
+    # input_path = Path("../../data/custom-format-default-filtered")
 
     model = PropertyCorrelationPredictor()
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
     # framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
-    framework.test_model(predict_subset=0.1)
+    framework.test_model(predict_subset=1)
