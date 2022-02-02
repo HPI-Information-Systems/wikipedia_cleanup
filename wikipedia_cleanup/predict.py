@@ -1,5 +1,7 @@
 import itertools
 import math
+import pickle
+import time
 from bisect import bisect_left
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -7,8 +9,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
-from sklearn.metrics import precision_recall_fscore_support
 from tqdm.auto import tqdm
 
 from wikipedia_cleanup.data_filter import (
@@ -16,9 +16,15 @@ from wikipedia_cleanup.data_filter import (
     OnlyUpdatesDataFilter,
 )
 from wikipedia_cleanup.data_processing import get_data
+from wikipedia_cleanup.evaluation import (
+    create_prediction_output,
+    evaluate_bucketed_predictions,
+    evaluate_metric_over_time,
+    evaluate_template_predictions,
+)
 from wikipedia_cleanup.predictor import Predictor
 from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
-from wikipedia_cleanup.utils import plot_directory
+from wikipedia_cleanup.utils import plot_directory, result_directory
 
 
 class TrainAndPredictFramework:
@@ -36,13 +42,19 @@ class TrainAndPredictFramework:
         self.timeframe_labels = ["day", "week", "month", "year"]
 
         self.predictor = predictor
-        own_relevant_attributes = ["value_valid_from"]
+        own_relevant_attributes = ["value_valid_from", "template"]
         self.relevant_attributes = list(
             set(own_relevant_attributes)
             | set(predictor.get_relevant_attributes())
             | set(self.group_key)
         )
         self.data: pd.DataFrame = pd.DataFrame()
+        self.run_results: Dict[str, Any] = {}
+        current_time = datetime.now()
+        self.run_id = (
+            f"{current_time.date()}:{current_time.hour}-"
+            f"{current_time.minute}-{current_time.second}"
+        )
 
     def load_data(self, input_path: Path, n_files: int, n_jobs: int):
         filters = [
@@ -67,8 +79,8 @@ class TrainAndPredictFramework:
         self,
         randomize: bool = False,
         predict_subset: float = 1.0,
-        estimate_stats: bool = False,
-    ):
+        save_results: bool = False,
+    ) -> str:
         keys = self.initialize_keys(randomize, predict_subset)
         all_day_labels = []
 
@@ -87,7 +99,6 @@ class TrainAndPredictFramework:
         columns = self.data.columns.tolist()
         num_columns = len(columns)
         value_valid_from_column_idx = columns.index("value_valid_from")
-        ten_percent_of_data = max(len(keys) // 10, 1)
         key_map = {
             key: np.array(list(group))
             for key, group in itertools.groupby(self.data.to_numpy(), lambda x: x[-1])
@@ -118,23 +129,15 @@ class TrainAndPredictFramework:
             timestamps_set = set(timestamps)
             day_labels = [test_date in timestamps_set for test_date in test_dates]
             all_day_labels.append(day_labels)
-            if estimate_stats:
-                if n_processed_keys % ten_percent_of_data == 0:
-                    stats = self.evaluate_predictions(
-                        predictions, all_day_labels, [], plots=False, print_output=False
-                    )
-                    if stats:
-                        stats_dict = {
-                            "🌒🎯D_pr": stats[0][0][1],
-                            "🌒📞D_rc": stats[0][1][1],
-                            "🌓🎯W_pc": stats[1][0][1],
-                            "🌓📞W_rc": stats[1][1][1],
-                        }
-                        progress_bar_it.set_postfix(stats_dict, refresh=False)
-
-        return self.evaluate_predictions(
-            predictions, all_day_labels, keys, plots=True, print_output=True
-        )
+        run_statistics = self.evaluate_predictions(predictions, all_day_labels)
+        if run_statistics:
+            self.run_results["keys"] = keys
+            output_folder = result_directory(self.run_id)
+            output_folder.mkdir(parents=True, exist_ok=True)
+            self.save_run_stats(output_folder, run_statistics)
+            if save_results:
+                self.save_run_results(output_folder)
+        return run_statistics
 
     def initialize_keys(self, randomize: bool, predict_subset: float):
         keys = self.data["key"].unique()
@@ -174,14 +177,12 @@ class TrainAndPredictFramework:
         return test_dates, test_dates_with_testing_timeframes
 
     def evaluate_predictions(
-        self,
-        predictions: List[List[List[bool]]],
-        day_labels: List[List[bool]],
-        keys: List[Tuple[Any]],
-        plots: bool = False,
-        print_output: bool = True,
-    ) -> Optional[List]:
+        self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
+    ) -> str:
+        prediction_output = ""
         if np.any(day_labels):
+            print("Starting evaluation.")
+            start = time.time()
             predictions = [
                 np.array(prediction, dtype=np.bool) for prediction in predictions
             ]
@@ -193,96 +194,63 @@ class TrainAndPredictFramework:
 
             prediction_stats = []
             for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
-                prediction_stats.append(
-                    self.evaluate_prediction(y_true, y_hat, title, print_output)
-                )
-            if plots:
-                plot_directory().mkdir(exist_ok=True, parents=True)
-                self.evaluate_metric_over_time(labels, predictions)
-                self.evaluate_bucketed_predictions(labels, predictions, keys)
-            return prediction_stats
-        return None
+                prediction_stats.append(create_prediction_output(y_true, y_hat, title))
+            prediction_output = "\n\n".join(prediction_stats)
 
-    def evaluate_bucketed_predictions(self, labels, predictions, keys):
+            self.run_results["labels"] = labels
+            self.run_results["predictions"] = predictions
+            end = time.time()
+            print(
+                f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}"
+            )
+        else:
+            print("Results could not be generated. No changes in the test timeframe.")
+        return prediction_output
+
+    def generate_plots(self, run_results: Optional[dict] = None):
+        print("Starting generating plots.")
+        start = time.time()
+
+        if not run_results:
+            run_results = self.run_results
+        labels = run_results["labels"]
+        predictions = run_results["predictions"]
+        keys = run_results["keys"]
+        output_folder = plot_directory(self.run_id)
+        output_folder.mkdir(parents=True, exist_ok=True)
+
+        evaluate_metric_over_time(
+            labels, predictions, self.testing_timeframes, output_folder
+        )
+
         train_data = self.data[
             self.data["value_valid_from"] < self.test_start_date.date()
         ]
-        n_changes = train_data.groupby("key")["value_valid_from"].count()
-        bucket_limits = [0, 5, 15, 50, 100, n_changes.max() + 1]
-        buckets = list(zip(bucket_limits[:-1], bucket_limits[1:]))
-
-        bucket_stats = []
-        for low, high in buckets:
-            keys_in_bucket = n_changes[(n_changes >= low) & (n_changes < high)].index
-            used_indices = pd.DataFrame(keys)[0].isin(keys_in_bucket).to_numpy()
-            cur_labels = [arr[used_indices] for arr in labels]
-            cur_predictions = [arr[used_indices] for arr in predictions]
-            for timeframe_label, timeframe_prediction in zip(
-                cur_labels, cur_predictions
-            ):
-                bucket_stats.append(
-                    self.evaluate_prediction(
-                        timeframe_label, timeframe_prediction, "", False
-                    )
-                )
-
-        plotting_df = pd.DataFrame(
-            np.array(bucket_stats)[..., :2, 1].reshape(-1, 2),
-            columns=["precision", "recall"],
-        )
-        plotting_df["timeframe"] = list(self.testing_timeframes * len(buckets))
-        plotting_df["bucket"] = list(
-            itertools.chain.from_iterable(
-                ([([i] * len(self.testing_timeframes)) for i in buckets])
+        try:
+            evaluate_bucketed_predictions(
+                labels,
+                predictions,
+                self.testing_timeframes,
+                output_folder,
+                keys,
+                train_data,
             )
-        )
-        plotting_df = (
-            plotting_df.set_index(["timeframe", "bucket"])
-            .sort_index()
-            .reset_index()
-            .set_index(["bucket", "timeframe"])
-        )
-        plotting_df.plot(kind="bar")
-        plt.ylabel("score")
-        plt.savefig(plot_directory() / "bucketed.png", bbox_inches="tight")
-
-    def evaluate_metric_over_time(self, labels, predictions):
-        for i, timeframe in enumerate(self.testing_timeframes[:-1]):
-            current_labels = labels[i]
-            current_predictions = predictions[i]
-            stats = [
-                precision_recall_fscore_support(
-                    current_labels[:, i],
-                    current_predictions[:, i],
-                    labels=[1],
-                    zero_division=0,
-                )
-                for i in range(current_labels.shape[1])
-            ]
-            prec = np.array([stat[0][0] for stat in stats])
-            rec = np.array([stat[1][0] for stat in stats])
-            plt.figure()
-            if timeframe == 1:
-                average = 5
-                prec = np.mean(np.reshape(prec, (-1, average)), axis=1)
-                rec = np.mean(np.reshape(rec, (-1, average)), axis=1)
-                plt.xlabel(f"time in {timeframe} day(s), averaged over 5 days")
-            else:
-                plt.xlabel(f"time in {timeframe} day(s)")
-
-            plt.plot(prec, label="precision")
-            # trend line
-            x = list(range(len(prec)))
-            multidim_pol = np.polyfit(x, prec, 1)
-            simple_pol = np.poly1d(multidim_pol)
-            plt.plot(x, simple_pol(x), "r--", color="grey")
-            plt.plot(rec, label="recall")
-            plt.ylabel("score")
-            plt.ylim((-0.05, 1.05))
-            plt.legend()
-            plt.savefig(
-                plot_directory() / f"over_time_{timeframe}.png", bbox_inches="tight"
+            evaluate_template_predictions(
+                labels,
+                predictions,
+                self.testing_timeframes,
+                output_folder,
+                keys,
+                train_data,
             )
+        except AssertionError:
+            print(
+                "Some plots failed as generated statistics were not of the right "
+                "format. This is likely due to low amounts of data."
+            )
+
+        end = time.time()
+        print(f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}")
 
     @staticmethod
     def get_data_until(
@@ -366,43 +334,15 @@ class TrainAndPredictFramework:
         return np.any(padded_labels, axis=2)
 
     @staticmethod
-    def print_stats(
-        pre_rec_f1_stat: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-        num_pos_predictions: int,
-        title: str,
-    ):
-        percent_data = pre_rec_f1_stat[3][1] / (
-            pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
-        )
-        percent_changes_pred = num_pos_predictions / (
-            pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
-        )
-        print(f"{title} \t\t\tchanges \tno changes")
-        print(
-            f"Precision:\t\t{pre_rec_f1_stat[0][1]:.4} \t\t{pre_rec_f1_stat[0][0]:.4}"
-        )
-        print(f"Recall:\t\t\t{pre_rec_f1_stat[1][1]:.4} \t\t{pre_rec_f1_stat[1][0]:.4}")
-        print(f"F1score:\t\t{pre_rec_f1_stat[2][1]:.4} \t\t{pre_rec_f1_stat[2][0]:.4}")
-        print(f"Changes of Data:\t{percent_data:.4%}, \tTotal: {pre_rec_f1_stat[3][1]}")
-        print(
-            f"Changes of Pred:\t{percent_changes_pred:.4%},"
-            f" \tTotal: {num_pos_predictions}"
-        )
-        print()
+    def save_run_stats(output_folder: Path, run_statistics: str) -> None:
+        run_stats_path = output_folder / "stats.txt"
+        with open(run_stats_path, "w") as f:
+            f.write(run_statistics)
 
-    def evaluate_prediction(
-        self, labels: np.ndarray, prediction: np.ndarray, title: str, print_output: bool
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        stats = precision_recall_fscore_support(
-            labels.reshape(-1), prediction.reshape(-1), zero_division=0
-        )
-        total_positive_predictions = np.count_nonzero(prediction)
-        if print_output:
-            self.print_stats(stats, total_positive_predictions, title)
-        return stats
-
-    def run_pipeline(self):
-        pass
+    def save_run_results(self, output_folder: Path):
+        run_results_path = output_folder / "results.pickle"
+        with open(run_results_path, "wb") as f:
+            pickle.dump(self.run_results, f)
 
 
 if __name__ == "__main__":
@@ -418,4 +358,4 @@ if __name__ == "__main__":
     # framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
-    framework.test_model(predict_subset=1)
+    framework.test_model(predict_subset=0.1)
