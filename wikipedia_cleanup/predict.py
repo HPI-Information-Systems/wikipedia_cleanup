@@ -83,6 +83,8 @@ class TrainAndPredictFramework:
         randomize: bool = False,
         predict_subset: float = 1.0,
         estimate_stats: bool = False,
+        print_output: bool = True,
+        plots: bool = True
     ):
         keys = self.data["key"].unique()
         if randomize:
@@ -167,9 +169,8 @@ class TrainAndPredictFramework:
                             "🌓📞W_rc": stats[1][1][1],
                         }
                         progress_bar_it.set_postfix(stats_dict, refresh=False)
-
         return self.evaluate_predictions(
-            predictions, all_day_labels, keys, plots=True, print_output=True
+            predictions, all_day_labels, keys, plots, print_output
         )
 
     def evaluate_predictions(
@@ -371,12 +372,17 @@ class TrainAndPredictFramework:
         num_pos_predictions: int,
         title: str,
     ):
-        percent_data = pre_rec_f1_stat[3][1] / (
-            pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
-        )
-        percent_changes_pred = num_pos_predictions / (
-            pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
-        )
+        try:
+            percent_data = pre_rec_f1_stat[3][1] / (
+                pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
+            )
+            percent_changes_pred = num_pos_predictions / (
+                pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
+            )
+        except IndexError:
+            percent_data = pre_rec_f1_stat[3][0]
+            percent_changes_pred = num_pos_predictions / pre_rec_f1_stat[3][0]
+            
         print(f"{title} \t\t\tchanges \tno changes")
         print(
             f"Precision:\t\t{pre_rec_f1_stat[0][1]:.4} \t\t{pre_rec_f1_stat[0][0]:.4}"
