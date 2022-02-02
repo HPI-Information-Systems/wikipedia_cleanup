@@ -310,7 +310,7 @@ class FeatureAdderFilter(AbstractDataFilter):
             days_between_last_and_2nd_to_last_change.fillna(0), downcast="integer"
         )
 
-        mean_change_frequency_all_previous = days_since_last_change.mean()
+        mean_change_frequency_all_previous = days_since_last_change.expanding().mean()
 
         mean_change_frequency_last_3 = (
             days_since_last_change.rolling(3).mean().fillna(0)
@@ -335,7 +335,9 @@ class FeatureAdderFilter(AbstractDataFilter):
                 days_between_last_and_2nd_to_last_change=days_between_last_and_2nd_to_last_change[  # noqa: E501
                     idx
                 ],
-                mean_change_frequency_all_previous=mean_change_frequency_all_previous,
+                mean_change_frequency_all_previous=mean_change_frequency_all_previous[
+                    idx
+                ],
                 mean_change_frequency_last_3=mean_change_frequency_last_3[idx],
                 **change.__dict__,
             )
