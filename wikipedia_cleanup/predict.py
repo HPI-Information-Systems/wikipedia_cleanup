@@ -53,21 +53,17 @@ class TrainAndPredictFramework:
         input_path: Path,
         n_files: int,
         n_jobs: int,
-        preceding_filters: List[AbstractDataFilter] = None,
+        appended_filters: List[AbstractDataFilter] = None,
     ):
-        filters = []
-        if preceding_filters is not None:
+        filters: List[AbstractDataFilter] = [OnlyUpdatesDataFilter()]
+        if appended_filters is not None:
             print(
                 f"WARNING: Using additional non standard "
-                f"preceding filters for the data loading: {preceding_filters}"
+                f"preceding filters for the data loading: {appended_filters}"
             )
-            filters.extend(preceding_filters)
-        filters.extend(
-            [
-                OnlyUpdatesDataFilter(),
-                KeepAttributesDataFilter(self.relevant_attributes),
-            ]
-        )
+            filters.extend(appended_filters)
+        filters.append(KeepAttributesDataFilter(self.relevant_attributes))
+
         self.data = get_data(
             input_path, n_files=n_files, n_jobs=n_jobs, filters=filters  # type: ignore
         )
@@ -428,9 +424,7 @@ if __name__ == "__main__":
     framework.data["key"] = list(
         zip(*[framework.data[group_key] for group_key in framework.group_key])
     )"""
-    framework.load_data(
-        input_path, n_files, 1, preceding_filters=[FeatureAdderFilter()]
-    )
+    framework.load_data(input_path, n_files, 1, appended_filters=[FeatureAdderFilter()])
     framework.fit_model()
     framework.test_model(predict_subset=1.0, randomize=False)
 
