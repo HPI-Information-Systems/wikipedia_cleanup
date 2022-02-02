@@ -72,7 +72,8 @@ class RandomForestPredictor(Predictor):
         # no further sorting needs to be done
         start = 0
         for iloc in tqdm(ilocs):
-            if iloc==1: continue
+            if iloc == 1:
+                continue
             # maybe dont train if we are below a trainsize threshold
             sample = train_data.iloc[start : start + iloc]
             start += iloc
