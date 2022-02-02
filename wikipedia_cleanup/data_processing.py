@@ -181,38 +181,37 @@ def get_data_single(
 
 
 def feature_generation(df):
-    df = df.rename(columns={"value_valid_from": "timestamp"})
-    df["timestamp"] = df["timestamp"].dt.normalize().dt.tz_localize(None)
+    df["value_valid_from"] = df["value_valid_from"].dt.normalize().dt.tz_localize(None)
 
-    df["day_of_year"] = df["timestamp"].dt.dayofyear
-    df["day_of_month"] = df["timestamp"].dt.day
-    df["day_of_week"] = df["timestamp"].dt.dayofweek
-    df["month_of_year"] = df["timestamp"].dt.month
-    df["quarter_of_year"] = df["timestamp"].dt.quarter
-    df["is_month_start"] = df["timestamp"].dt.is_month_start
-    df["is_month_end"] = df["timestamp"].dt.is_month_end
-    df["is_quarter_start"] = df["timestamp"].dt.is_quarter_start
-    df["is_quarter_end"] = df["timestamp"].dt.is_quarter_end
+    df["day_of_year"] = df["value_valid_from"].dt.dayofyear
+    df["day_of_month"] = df["value_valid_from"].dt.day
+    df["day_of_week"] = df["value_valid_from"].dt.dayofweek
+    df["month_of_year"] = df["value_valid_from"].dt.month
+    df["quarter_of_year"] = df["value_valid_from"].dt.quarter
+    df["is_month_start"] = df["value_valid_from"].dt.is_month_start
+    df["is_month_end"] = df["value_valid_from"].dt.is_month_end
+    df["is_quarter_start"] = df["value_valid_from"].dt.is_quarter_start
+    df["is_quarter_end"] = df["value_valid_from"].dt.is_quarter_end
 
     df["days_since_last_change"] = (
-        df["timestamp"]
-        - df.groupby(["infobox_key", "property_name"])["timestamp"]
+        df["value_valid_from"]
+        - df.groupby(["infobox_key", "property_name"])["value_valid_from"]
         .shift(+1)
         .fillna(pd.Timestamp("20990101"))
     ).dt.days
     df.loc[(df["days_since_last_change"] < 0), "days_since_last_change"] = 0
 
     df["days_since_last_2_changes"] = (
-        df["timestamp"]
-        - df.groupby(["infobox_key", "property_name"])["timestamp"]
+        df["value_valid_from"]
+        - df.groupby(["infobox_key", "property_name"])["value_valid_from"]
         .shift(+2)
         .fillna(pd.Timestamp("20990101"))
     ).dt.days
     df.loc[(df["days_since_last_2_changes"] < 0), "days_since_last_2_changes"] = 0
 
     df["days_since_last_3_changes"] = (
-        df["timestamp"]
-        - df.groupby(["infobox_key", "property_name"])["timestamp"]
+        df["value_valid_from"]
+        - df.groupby(["infobox_key", "property_name"])["value_valid_from"]
         .shift(+3)
         .fillna(pd.Timestamp("20990101"))
     ).dt.days
