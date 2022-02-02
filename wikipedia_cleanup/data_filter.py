@@ -312,7 +312,9 @@ class FeatureAdderFilter(AbstractDataFilter):
 
         mean_change_frequency_all_previous = days_since_last_change.mean()
 
-        mean_change_frequency_last_3 = days_since_last_change.rolling(3).mean()
+        mean_change_frequency_last_3 = (
+            days_since_last_change.rolling(3).mean().fillna(0)
+        )
 
         changes_with_features: List[InfoboxChange] = []
         for idx, change in enumerate(changes):
