@@ -265,10 +265,10 @@ class EditWarRevertsDataFilter(AbstractRevertsDataFilter):
 
 class FeatureAdderFilter(AbstractDataFilter):
     def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        DEFAULT_TIMESTAMP = pd.Timestamp("20990101")
+
         change_timestamps = pd.Series((change.value_valid_from for change in changes))
-        change_timestamps = (
-            change_timestamps.dt.normalize().dt.normalize().dt.tz_localize(None)
-        )
+        change_timestamps = change_timestamps.dt.normalize().dt.tz_localize(None)
         day_of_year = change_timestamps.dt.dayofyear
         day_of_month = change_timestamps.dt.day
         day_of_week = change_timestamps.dt.dayofweek
@@ -280,25 +280,22 @@ class FeatureAdderFilter(AbstractDataFilter):
         is_quarter_end = change_timestamps.dt.is_quarter_end
 
         days_since_last_change = (
-            change_timestamps
-            - change_timestamps.shift(+1).fillna(pd.Timestamp("20990101"))
+            change_timestamps - change_timestamps.shift(1).fillna(DEFAULT_TIMESTAMP)
         ).dt.days
         days_since_last_change = days_since_last_change.copy()
-        days_since_last_change.loc[days_since_last_change < 0] = 0
+        days_since_last_change[days_since_last_change < 0] = 0
 
         days_since_last_2_changes = (
-            change_timestamps
-            - change_timestamps.shift(+2).fillna(pd.Timestamp("20990101"))
+            change_timestamps - change_timestamps.shift(2).fillna(DEFAULT_TIMESTAMP)
         ).dt.days
         days_since_last_2_changes = days_since_last_2_changes.copy()
-        days_since_last_2_changes.loc[(days_since_last_2_changes < 0)] = 0
+        days_since_last_2_changes[days_since_last_2_changes < 0] = 0
 
         days_since_last_3_changes = (
-            change_timestamps
-            - change_timestamps.shift(+3).fillna(pd.Timestamp("20990101"))
+            change_timestamps - change_timestamps.shift(3).fillna(DEFAULT_TIMESTAMP)
         ).dt.days
         days_since_last_3_changes = days_since_last_3_changes.copy()
-        days_since_last_3_changes.loc[days_since_last_3_changes < 0] = 0
+        days_since_last_3_changes[days_since_last_3_changes < 0] = 0
 
         days_until_next_change = days_since_last_change.shift(-1)
         days_until_next_change = pd.to_numeric(

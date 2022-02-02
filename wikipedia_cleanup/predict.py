@@ -59,7 +59,7 @@ class TrainAndPredictFramework:
         if appended_filters is not None:
             print(
                 f"WARNING: Using additional non standard "
-                f"preceding filters for the data loading: {appended_filters}"
+                f"appended filters for the data loading: {appended_filters}"
             )
             filters.extend(appended_filters)
         filters.append(KeepAttributesDataFilter(self.relevant_attributes))
