@@ -34,6 +34,7 @@ class TrainAndPredictFramework:
         group_key: List[str],
         test_start_date: datetime = datetime(2018, 9, 1),
         test_duration: int = 365,
+        run_id: Optional[str] = None,
     ):
         self.test_start_date = test_start_date
         self.test_duration = test_duration
@@ -52,8 +53,12 @@ class TrainAndPredictFramework:
         self.run_results: Dict[str, Any] = {}
         current_time = datetime.now()
         self.run_id = (
-            f"{current_time.date()}:{current_time.hour}-"
-            f"{current_time.minute}-{current_time.second}"
+            run_id
+            if run_id is not None
+            else (
+                f"{current_time.date()}:{current_time.hour}-"
+                f"{current_time.minute}-{current_time.second}"
+            )
         )
 
     def load_data(self, input_path: Path, n_files: int, n_jobs: int):
