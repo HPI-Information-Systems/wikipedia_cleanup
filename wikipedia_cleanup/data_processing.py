@@ -165,6 +165,7 @@ def get_data(
     res_df = pd.DataFrame(change.__dict__ for change in all_changes)
     return res_df.sort_index(axis=1)
 
+
 def get_data_single(
     file: Path,
     data_filters: Optional[List[AbstractDataFilter]] = None,

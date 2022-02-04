@@ -12,14 +12,11 @@ from sklearn.metrics import precision_recall_fscore_support
 from tqdm.auto import tqdm
 
 from wikipedia_cleanup.data_filter import (
-    AbstractDataFilter,
-    FeatureAdderFilter,
     KeepAttributesDataFilter,
     OnlyUpdatesDataFilter,
 )
 from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.predictor import Predictor
-from wikipedia_cleanup.random_forest import RandomForestPredictor
 from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
 from wikipedia_cleanup.utils import plot_directory
 
