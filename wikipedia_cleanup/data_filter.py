@@ -92,6 +92,36 @@ class AbstractDataFilter(ABC):
         )
 
 
+class StaticInfoboxTemplateDataFilter(AbstractDataFilter):
+    def __init__(
+        self, dynamic_index_file_path: Path, keep_dynamic: bool = True
+    ) -> None:
+        super().__init__()
+        self.keep_dynamic = keep_dynamic
+        dynamic_index_file = pd.read_csv(dynamic_index_file_path)
+        self.dynamic_index = set(
+            (
+                (property_name, template)
+                for property_name, template in zip(
+                    dynamic_index_file["property_name"].to_numpy(),
+                    dynamic_index_file["template"].to_numpy(),
+                )
+            )
+        )
+
+    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        current_property_name = changes[0].property_name
+        current_template = changes[0].template
+        result = []
+        if self.keep_dynamic:
+            if (current_property_name, current_template) in self.dynamic_index:
+                result = changes
+        else:
+            if (current_property_name, current_template) not in self.dynamic_index:
+                result = changes
+        return result
+
+
 class KeepAttributesDataFilter(AbstractDataFilter):
     def __init__(self, attributes_to_keep: List[str]):
         super().__init__()

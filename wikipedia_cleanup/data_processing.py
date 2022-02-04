@@ -13,6 +13,7 @@ from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
     EditWarRevertsDataFilter,
     KeepAttributesDataFilter,
+    StaticInfoboxTemplateDataFilter,
     filter_changes_with,
     generate_default_filters,
     get_stats_from_filters,
@@ -161,10 +162,8 @@ def get_data(
             mapped_filters.append(changes_and_filters[1])
     all_changes = itertools.chain.from_iterable(all_changes)
     merge_filter_stats_into(mapped_filters, filters)
-    res_df = pd.DataFrame([change.__dict__ for change in all_changes])
-    sorted_columns = sorted(list(res_df.columns))
-    return res_df[sorted_columns]
-
+    res_df = pd.DataFrame(change.__dict__ for change in all_changes)
+    return res_df.sort_index(axis=1)
 
 def get_data_single(
     file: Path,
@@ -255,6 +254,11 @@ if __name__ == "__main__":
         3,
     )
     filters = generate_default_filters()
+    filters.append(
+        StaticInfoboxTemplateDataFilter(
+            Path("/run/media/secret/manjaro-home/secret/mp-data/avg_dynamic.csv")
+        )
+    )
     get_data(
         Path(
             "/run/media/secret/manjaro-home/secret/mp-data/"

@@ -20,6 +20,8 @@ from wikipedia_cleanup.data_filter import (
 from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.predictor import Predictor
 from wikipedia_cleanup.random_forest import RandomForestPredictor
+from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
+from wikipedia_cleanup.utils import plot_directory
 
 
 class TrainAndPredictFramework:
@@ -40,30 +42,17 @@ class TrainAndPredictFramework:
         self.predictor = predictor
         own_relevant_attributes = ["value_valid_from"]
         self.relevant_attributes = list(
-            set(
-                own_relevant_attributes
-                + predictor.get_relevant_attributes()
-                + self.group_key
-            )
+            set(own_relevant_attributes)
+            | set(predictor.get_relevant_attributes())
+            | set(self.group_key)
         )
         self.data: pd.DataFrame = pd.DataFrame()
 
-    def load_data(
-        self,
-        input_path: Path,
-        n_files: int,
-        n_jobs: int,
-        appended_filters: List[AbstractDataFilter] = None,
-    ):
-        filters: List[AbstractDataFilter] = [OnlyUpdatesDataFilter()]
-        if appended_filters is not None:
-            print(
-                f"WARNING: Using additional non standard "
-                f"appended filters for the data loading: {appended_filters}"
-            )
-            filters.extend(appended_filters)
-        filters.append(KeepAttributesDataFilter(self.relevant_attributes))
-
+    def load_data(self, input_path: Path, n_files: int, n_jobs: int):
+        filters = [
+            OnlyUpdatesDataFilter(),
+            KeepAttributesDataFilter(self.relevant_attributes),
+        ]
         self.data = get_data(
             input_path, n_files=n_files, n_jobs=n_jobs, filters=filters  # type: ignore
         )
@@ -71,7 +60,7 @@ class TrainAndPredictFramework:
             None
         )
         self.data["key"] = list(
-            zip(*[self.data[group_key] for group_key in self.group_key])
+            zip(*(self.data[group_key] for group_key in self.group_key))
         )
 
     def fit_model(self):
@@ -84,37 +73,16 @@ class TrainAndPredictFramework:
         predict_subset: float = 1.0,
         estimate_stats: bool = False,
     ):
-        keys = self.data["key"].unique()
-        if randomize:
-            np.random.shuffle(keys)
-        if predict_subset < 1:
-            print(f"Predicting only {predict_subset:.2%} percent of the data.")
-            subset_idx = math.ceil(len(keys) * predict_subset)
-            keys = keys[:subset_idx]
+        keys = self.initialize_keys(randomize, predict_subset)
         all_day_labels = []
-        test_dates = [
-            (self.test_start_date + timedelta(days=x)).date()
-            for x in range(self.test_duration)
-        ]
 
-        # precalculate all predict day, week, month, year entries to reuse them
-        test_dates_with_testing_timeframes = []
-        for days_evaluated, first_day_to_predict in enumerate(test_dates):
-            curr_testing_timeframes = []
-            for idx, timeframe in enumerate(self.testing_timeframes):
-                if days_evaluated % timeframe == 0:
-                    prediction_end_date = first_day_to_predict + timedelta(
-                        days=timeframe
-                    )
-                    curr_testing_timeframes.append(
-                        (timeframe, prediction_end_date, idx)
-                    )
-            test_dates_with_testing_timeframes.append(
-                (first_day_to_predict, curr_testing_timeframes)
-            )
+        (
+            test_dates,
+            test_dates_with_testing_timeframes,
+        ) = self.calculate_test_date_metadata()
 
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
-        # its ok to discard the time and only retain the date
+        # it's ok to discard the time and only retain the date
         # since there is only one change per day.
         try:
             self.data["value_valid_from"] = self.data["value_valid_from"].dt.date
@@ -123,7 +91,7 @@ class TrainAndPredictFramework:
         columns = self.data.columns.tolist()
         num_columns = len(columns)
         value_valid_from_column_idx = columns.index("value_valid_from")
-        single_percent_of_data = max(len(keys) // 100, 1)
+        ten_percent_of_data = max(len(keys) // 10, 1)
         key_map = {
             key: np.array(list(group))
             for key, group in itertools.groupby(self.data.to_numpy(), lambda x: x[-1])
@@ -152,10 +120,10 @@ class TrainAndPredictFramework:
             for i, prediction in enumerate(current_page_predictions):
                 predictions[i].append(prediction)
             timestamps_set = set(timestamps)
-            day_labels = [date in timestamps_set for date in test_dates]
+            day_labels = [test_date in timestamps_set for test_date in test_dates]
             all_day_labels.append(day_labels)
             if estimate_stats:
-                if n_processed_keys % single_percent_of_data == 0:
+                if n_processed_keys % ten_percent_of_data == 0:
                     stats = self.evaluate_predictions(
                         predictions, all_day_labels, [], plots=False, print_output=False
                     )
@@ -171,6 +139,43 @@ class TrainAndPredictFramework:
         return self.evaluate_predictions(
             predictions, all_day_labels, keys, plots=True, print_output=True
         )
+
+    def initialize_keys(self, randomize: bool, predict_subset: float):
+        keys = self.data["key"].unique()
+        if randomize:
+            np.random.shuffle(keys)
+        if predict_subset < 1:
+            print(f"Predicting only {predict_subset:.2%} percent of the data.")
+            subset_idx = math.ceil(len(keys) * predict_subset)
+            keys = keys[:subset_idx]
+        return keys
+
+    def calculate_test_date_metadata(
+        self,
+    ) -> Tuple[List[date], List[Tuple[date, List[Tuple[int, date, int]]]]]:
+        test_dates = [
+            (self.test_start_date + timedelta(days=x)).date()
+            for x in range(self.test_duration)
+        ]
+
+        # precalculate all predict day, week, month, year entries to reuse them
+        test_dates_with_testing_timeframes = []
+        for days_evaluated, first_day_to_predict in enumerate(test_dates):
+            curr_testing_timeframes = []
+            for idx, timeframe in enumerate(self.testing_timeframes):
+                if days_evaluated % timeframe == 0:
+                    prediction_end_date = first_day_to_predict + timedelta(
+                        days=timeframe
+                    )
+                    curr_testing_timeframes.append(
+                        (timeframe, prediction_end_date, idx)
+                    )
+            test_dates_with_testing_timeframes.append(
+                (first_day_to_predict, curr_testing_timeframes)
+            )
+        # test_dates_with_testing_timeframes has the format:
+        # first_date, [timeframe, end_date, timeframe_idx]
+        return test_dates, test_dates_with_testing_timeframes
 
     def evaluate_predictions(
         self,
@@ -196,7 +201,7 @@ class TrainAndPredictFramework:
                     self.evaluate_prediction(y_true, y_hat, title, print_output)
                 )
             if plots:
-                self.image_dir.mkdir(exist_ok=True, parents=True)
+                plot_directory().mkdir(exist_ok=True, parents=True)
                 self.evaluate_metric_over_time(labels, predictions)
                 self.evaluate_bucketed_predictions(labels, predictions, keys)
             return prediction_stats
@@ -206,7 +211,6 @@ class TrainAndPredictFramework:
         train_data = self.data[
             self.data["value_valid_from"] < self.test_start_date.date()
         ]
-
         n_changes = train_data.groupby("key")["value_valid_from"].count()
         bucket_limits = [0, 5, 15, 50, 100, n_changes.max() + 1]
         buckets = list(zip(bucket_limits[:-1], bucket_limits[1:]))
@@ -244,7 +248,7 @@ class TrainAndPredictFramework:
         )
         plotting_df.plot(kind="bar")
         plt.ylabel("score")
-        plt.savefig(self.image_dir / "bucketed.png", bbox_inches="tight")
+        plt.savefig(plot_directory() / "bucketed.png", bbox_inches="tight")
 
     def evaluate_metric_over_time(self, labels, predictions):
         for i, timeframe in enumerate(self.testing_timeframes[:-1]):
@@ -281,7 +285,7 @@ class TrainAndPredictFramework:
             plt.ylim((-0.05, 1.05))
             plt.legend()
             plt.savefig(
-                self.image_dir / f"over_time_{timeframe}.png", bbox_inches="tight"
+                plot_directory() / f"over_time_{timeframe}.png", bbox_inches="tight"
             )
 
     @staticmethod
@@ -394,7 +398,7 @@ class TrainAndPredictFramework:
         self, labels: np.ndarray, prediction: np.ndarray, title: str, print_output: bool
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         stats = precision_recall_fscore_support(
-            labels.flatten(), prediction.flatten(), zero_division=0
+            labels.reshape(-1), prediction.reshape(-1), zero_division=0
         )
         total_positive_predictions = np.count_nonzero(prediction)
         if print_output:
@@ -411,25 +415,11 @@ if __name__ == "__main__":
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
+    input_path = Path("../../data/custom-format-default-filtered")
 
-    model = RandomForestPredictor(use_cache=False)
+    model = PropertyCorrelationPredictor()
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
-    """framework.data = pd.read_csv(
-        "/run/media/secret/manjaro-home/secret/mp-data/popular_data_with_features2.csv"
-    )[:100000]
-    framework.data["value_valid_from"] = pd.to_datetime(
-        framework.data["timestamp"]
-    ).dt.tz_localize(None)
-    group_key = ["infobox_key", "property_name"]
-    framework.data["key"] = list(
-        zip(*[framework.data[group_key] for group_key in framework.group_key])
-    )"""
-    framework.load_data(input_path, n_files, 1, appended_filters=[FeatureAdderFilter()])
-    framework.fit_model()
-    framework.test_model(predict_subset=1.0, randomize=False)
-
-    """model = PropertyCorrelationPredictor(use_cache=False)
-    framework = TrainAndPredictFramework(model, ["page_id"])
+    # framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
-    framework.test_model(predict_subset=1.0, randomize=False)"""
+    framework.test_model(predict_subset=0.1)
