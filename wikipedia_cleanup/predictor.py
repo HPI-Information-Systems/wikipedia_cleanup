@@ -34,12 +34,21 @@ class Predictor(ABC):
         raise NotImplementedError()
 
 
-class ZeroPredictor(Predictor):
+class StaticPredictor(Predictor, ABC):
     def fit(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
         pass
 
+    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
+        return []
+
+    @staticmethod
+    def get_relevant_attributes() -> List[str]:
+        return []
+
+
+class ZeroPredictor(StaticPredictor):
     def predict_timeframe(
         self,
         data_key: np.ndarray,
@@ -50,15 +59,8 @@ class ZeroPredictor(Predictor):
     ) -> bool:
         return False
 
-    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
-        return [identifier]
 
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
-        return []
-
-
-class OnePredictor(ZeroPredictor):
+class OnePredictor(StaticPredictor):
     def predict_timeframe(
         self,
         data_key: np.ndarray,
@@ -70,7 +72,7 @@ class OnePredictor(ZeroPredictor):
         return True
 
 
-class RandomPredictor(ZeroPredictor):
+class RandomPredictor(StaticPredictor):
     def __init__(self, p: float = 0.5):
         self.p = p
 
@@ -94,23 +96,24 @@ class MeanPredictor(ZeroPredictor):
         first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
-        pred = self.next_change(data_key)
+        col_idx = columns.index("value_valid_from")
+        pred = self.next_change(data_key[:, col_idx])
         if pred is None:
             return False
         return (
             first_day_to_predict <= pred <= first_day_to_predict + timedelta(timeframe)
         )
 
+    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
+        return [identifier]
+
     @staticmethod
-    def next_change(time_series: pd.DataFrame) -> Optional[date]:
-        previous_change_timestamps = time_series["value_valid_from"].to_numpy()
-        if len(previous_change_timestamps) < 2:
+    def next_change(time_series: np.ndarray) -> Optional[date]:
+        if len(time_series) < 2:
             return None
 
         mean_time_to_change: np.timedelta64 = np.mean(
-            previous_change_timestamps[1:] - previous_change_timestamps[0:-1]
+            time_series[1:] - time_series[0:-1]
         )
-        return_value: np.datetime64 = (
-            previous_change_timestamps[-1] + mean_time_to_change
-        )
+        return_value: np.datetime64 = time_series[-1] + mean_time_to_change
         return pd.to_datetime(return_value).date()

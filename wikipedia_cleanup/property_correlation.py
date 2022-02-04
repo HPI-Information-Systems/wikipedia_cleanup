@@ -12,18 +12,19 @@ from sklearn.neighbors import NearestNeighbors
 from tqdm.auto import tqdm
 
 from wikipedia_cleanup.predictor import Predictor
+from wikipedia_cleanup.utils import cache_directory
 
 
 class PropertyCorrelationPredictor(Predictor):
-    # TODO justify choice
     NUM_REQUIRED_CHANGES = 5
     MAX_ALLOWED_PROPERTIES = 55  # Set via boxplot whisker for all links (53)
+    # TODO justify choice
     PERCENT_ALLOWED_MISMATCHES = 0.05
 
     def __init__(self, allowed_change_delay: int = 3, use_cache: bool = True) -> None:
         super().__init__()
         self.related_properties_lookup: dict = {}
-        self.hash_location = Path("cache") / self.__class__.__name__
+        self.hash_location = cache_directory() / self.__class__.__name__
 
         self.use_hash = use_cache
         # TODO justify choice
@@ -179,6 +180,7 @@ class PropertyCorrelationPredictor(Predictor):
         self.related_properties_lookup = matches
         if self.use_hash:
             possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
+            print(f"Saving cache to {possible_cached_mapping.name}.")
             with open(possible_cached_mapping, "wb") as f:
                 pickle.dump(self.related_properties_lookup, f)
 
@@ -214,8 +216,17 @@ class PropertyCorrelationPredictor(Predictor):
         return links_found
 
     def _calculate_cache_name(self, data: pd.DataFrame) -> Path:
-        hash_string = "".join(str(x) for x in [data.shape, data.head(2), data.tail(2)])
-        hash_id = hashlib.md5(hash_string.encode("utf-8")).hexdigest()[:10]
+        hash_string = (
+            f"{data.shape},\n"
+            f"{','.join([str(v) for v in data.columns])},\n"
+            f"{','.join([str(v) for v in data.iloc[0]])},\n"
+            f"{','.join([str(v) for v in data.iloc[-1]])},\n"
+            f"{PropertyCorrelationPredictor.NUM_REQUIRED_CHANGES},\n"
+            f"{PropertyCorrelationPredictor.MAX_ALLOWED_PROPERTIES},\n"
+            f"{PropertyCorrelationPredictor.PERCENT_ALLOWED_MISMATCHES},\n"
+            f"{self.delay_range}"
+        )
+        hash_id = hashlib.md5(hash_string.encode("utf-8")).hexdigest()[:20]
         possible_cached_mapping = self.hash_location / hash_id
         return possible_cached_mapping
 
