@@ -16,7 +16,10 @@ class RandomForestPredictor(Predictor):
     def __init__(self, use_cache: bool = True) -> None:
         super().__init__()
         self.regressors: dict = {}
+        # contains for a given infobox_propertyname (key) the regressor (value)
         self.last_preds: dict = {}
+        # contains for a given infobox_propertyname (key) a (date,pred) tuple (value)
+        # date is the date of the last change and pred the days until next change
         self.hash_location = Path("cache") / self.__class__.__name__
         self.use_hash = use_cache
 
@@ -63,21 +66,24 @@ class RandomForestPredictor(Predictor):
     def fit(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
+        DUMMY_TIMESTAMP = pd.Timestamp("1999-12-31")
+        # used as dummy for date comparison in first prediction
         if self.use_hash:
             possible_cached_mapping = self._calculate_cache_name(train_data)
             if self._load_cache(possible_cached_mapping):
                 return
-        ilocs = train_data.groupby(keys, sort=False).count()["value_valid_from"]
+        key_change_counts = train_data.groupby(keys, sort=False).count()[
+            "value_valid_from"
+        ]
         # Assumption: data is already sorted by keys so
         # no further sorting needs to be done
         start = 0
-        for iloc in tqdm(ilocs):
-            if iloc == 1:
+        for key_change_count in tqdm(key_change_counts):
+            if key_change_count == 1:
                 continue
-            # maybe dont train if we are below a trainsize threshold
-            sample = train_data.iloc[start : start + iloc]
-            start += iloc
-            sample = sample.drop(columns=keys).iloc[:-1]
+            sample = train_data.iloc[start : start + key_change_count]
+            start += key_change_count
+            sample = sample.iloc[:-1]
             X = sample[self.get_relevant_attributes()].drop(
                 columns=["value_valid_from", "days_until_next_change"]
             )
@@ -87,7 +93,7 @@ class RandomForestPredictor(Predictor):
             )
             reg.fit(X, y)
             self.regressors[sample["key"].iloc[0]] = reg
-            self.last_preds[sample["key"].iloc[0]] = [pd.Timestamp("1999-12-31"), 0]
+            self.last_preds[sample["key"].iloc[0]] = (DUMMY_TIMESTAMP, 0)
 
         if self.use_hash:
             possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
@@ -129,7 +135,7 @@ class RandomForestPredictor(Predictor):
             ]
             X_test = sample[indices].reshape(1, -1)
             pred = int(reg.predict(X_test)[0])
-            self.last_preds[data_key_item] = [sample_value_valid_from, pred]
+            self.last_preds[data_key_item] = (sample_value_valid_from, pred)
 
         else:
             pred = self.last_preds[data_key_item][1]
