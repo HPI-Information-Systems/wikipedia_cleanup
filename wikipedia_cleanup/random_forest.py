@@ -6,7 +6,7 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from tqdm.auto import tqdm
 
 from wikipedia_cleanup.predictor import Predictor
@@ -81,19 +81,20 @@ class RandomForestPredictor(Predictor):
         start = 0
         for key_change_count in tqdm(key_change_counts):
             if key_change_count == 1:
+                start += key_change_count
                 continue
             # maybe dont train if we are below a trainsize threshold
             if self.padding: 
-                sample = train_data.iloc[start : start + iloc]
+                sample = train_data.iloc[start : start + key_change_count]
                 sample.loc[:,'is_change'] = True
                 ranges = sample['days_since_last_change'].apply(lambda x: list(range(1, x+1)))
                 ranges = np.append([0],np.concatenate(ranges.values).ravel())
                 revert_ranges = sample['days_since_last_change'].apply(lambda x: list(range(x+1, 1, -1)))
                 revert_ranges = np.append(np.concatenate(revert_ranges.values).ravel(), [0])
                 sample  = sample.set_index('value_valid_from')\
-                    .groupby(['infobox_key', 'property_name', 'template']).apply(lambda x: \
+                    .groupby(['infobox_key', 'property_name']).apply(lambda x: \
                         x.reindex(pd.date_range(x.index.min(), x.index.max(), freq='D', name='value_valid_from')))\
-                        .drop(['infobox_key', 'property_name', 'template'], axis=1).reset_index()
+                        .drop(['infobox_key', 'property_name'], axis=1).reset_index()
                 sample.fillna(False, inplace=True)
                 sample["day_of_year"] = sample["value_valid_from"].dt.dayofyear
                 sample["day_of_month"] = sample["value_valid_from"].dt.day
@@ -108,27 +109,28 @@ class RandomForestPredictor(Predictor):
                 sample['days_until_next_change'] = revert_ranges
 
             else:
-                sample = train_data.iloc[start : start + key_change_count]
+                sample = train_data.iloc[start : start + key_change_count-1]
             start += key_change_count
-            sample = sample.drop(columns=keys).iloc[:-1]
             if self.padding:
                 X = sample[self.get_relevant_attributes()].drop(
-                    columns=["value_valid_from","days_until_next_change"]
+                    columns=["value_valid_from","days_until_next_change"]#, "is_change"]
                 )
-                y = sample["is_change"]
-
+                #y = sample["is_change"]
+                y = sample["days_until_next_change"]
+                reg = RandomForestRegressor(
+                random_state=0, n_estimators=10, max_features="auto"
+                )
             else:
                 X = sample[self.get_relevant_attributes()].drop(
                     columns=['value_valid_from', "days_until_next_change"]
                 )
                 y = sample["days_until_next_change"]
-            reg = RandomForestClassifier(
-                random_state=0, n_estimators=10, max_features="auto"
-            )
+                reg = RandomForestClassifier(
+                    random_state=0, n_estimators=10, max_features="auto"
+                )
             reg.fit(X, y)
             self.regressors[sample["key"].iloc[0]] = reg
             self.last_preds[sample["key"].iloc[0]] = (DUMMY_TIMESTAMP, 0)
-
         if self.use_hash:
             possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
             with open(possible_cached_mapping, "wb") as f:
@@ -158,30 +160,29 @@ class RandomForestPredictor(Predictor):
             # (it didnt if there was no traindata)
             return False        
         if self.padding:
+            first_day_to_predict = pd.to_datetime(first_day_to_predict)
             sample  = []
-            last_change = data_key[-1, value_valid_from_column_idx]
-            sample.append(first_day_to_predict.dt.dayofyear)
-            sample.append(first_day_to_predict.dt.day)
-            sample.append(first_day_to_predict.dt.dayofweek)
-            sample.append(first_day_to_predict.dt.month)
-            sample.append(first_day_to_predict.dt.quarter)
-            sample.append(first_day_to_predict.dt.is_month_start)
-            sample.append(first_day_to_predict.dt.is_month_end)
-            sample.append(first_day_to_predict.dt.is_quarter_start)
-            sample.append(first_day_to_predict.dt.is_quarter_end)
+            last_change = pd.to_datetime(data_key[-1, value_valid_from_column_idx])
+            sample.append(first_day_to_predict.dayofyear)
+            sample.append(first_day_to_predict.day)
+            sample.append(first_day_to_predict.dayofweek)
+            sample.append(first_day_to_predict.month)
+            sample.append(first_day_to_predict.quarter)
+            sample.append(first_day_to_predict.is_month_start)
+            sample.append(first_day_to_predict.is_month_end)
+            sample.append(first_day_to_predict.is_quarter_start)
+            sample.append(first_day_to_predict.is_quarter_end)
             sample.append((first_day_to_predict - last_change).days)
-            sample_value_valid_from = sample[value_valid_from_column_idx]
 
             reg = self.regressors[data_key_item]
-            indices = [
-                columns.index(attr)
-                for attr in self.get_relevant_attributes()
-                if not (attr == "value_valid_from" or attr == "days_until_next_change")
-            ]
-            X_test = sample[indices].reshape(1, -1)
+            X_test = np.array(sample).reshape(1, -1)
             pred = int(reg.predict(X_test)[0])
-            self.last_preds[data_key_item] = (sample_value_valid_from, pred)
-
+            self.last_preds[data_key_item] = (first_day_to_predict, pred)
+            #return pred
+            return (
+                first_day_to_predict
+                <= (first_day_to_predict + timedelta(pred))
+                < first_day_to_predict + timedelta(timeframe))
         else:
             sample = data_key[-1, ...]
             sample_value_valid_from = sample[value_valid_from_column_idx]
