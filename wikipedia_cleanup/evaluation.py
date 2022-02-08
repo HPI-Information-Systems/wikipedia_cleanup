@@ -9,15 +9,15 @@ from sklearn.metrics import precision_recall_fscore_support
 
 
 def stats_to_string(
-    pre_rec_f1_stat: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-    num_pos_predictions: int,
-    title: str,
+        pre_rec_f1_stat: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+        num_pos_predictions: int,
+        title: str,
 ) -> str:
     percent_data = pre_rec_f1_stat[3][1] / (
-        pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
+            pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
     )
     percent_changes_pred = num_pos_predictions / (
-        pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
+            pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
     )
 
     output = (
@@ -32,16 +32,16 @@ def stats_to_string(
 
 
 def evaluate_prediction(
-    labels: np.ndarray, prediction: np.ndarray
+        labels: np.ndarray, prediction: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     stats = precision_recall_fscore_support(
-        labels.reshape(-1), prediction.reshape(-1), zero_division=0
+        labels.reshape(-1), prediction.reshape(-1), zero_division=0, labels=[0, 1]
     )
     return stats
 
 
 def create_prediction_output(
-    labels: np.ndarray, prediction: np.ndarray, title: str
+        labels: np.ndarray, prediction: np.ndarray, title: str
 ) -> str:
     stats = evaluate_prediction(labels, prediction)
     total_positive_predictions = np.count_nonzero(prediction)
@@ -49,7 +49,7 @@ def create_prediction_output(
 
 
 def evaluate_bucketed_predictions(
-    labels, predictions, testing_timeframes, output_folder, keys, data
+        labels: np.ndarray, predictions: np.ndarray, testing_timeframes: List[int], output_folder: Path, keys, data
 ):
     n_changes = data.groupby("key")["value_valid_from"].count()
     bucket_limits = [0, 5, 15, 50, 100, n_changes.max() + 1]
@@ -59,16 +59,13 @@ def evaluate_bucketed_predictions(
     for low, high in buckets:
         keys_in_bucket = n_changes[(n_changes >= low) & (n_changes < high)].index
         used_indices = pd.DataFrame(keys)[0].isin(keys_in_bucket).to_numpy()
-        cur_labels = [arr[used_indices] for arr in labels]
-        cur_predictions = [arr[used_indices] for arr in predictions]
-        for timeframe_label, timeframe_prediction in zip(cur_labels, cur_predictions):
-            stats.append(evaluate_prediction(timeframe_label, timeframe_prediction))
+        stats.extend(evaluate_key_subset(labels, predictions, used_indices))
 
     plot_multi_stat_data(stats, testing_timeframes, buckets, output_folder / "bucketed")
 
 
 def evaluate_template_predictions(
-    labels, predictions, testing_timeframes, output_folder, keys, data
+        labels, predictions, testing_timeframes, output_folder, keys, data
 ):
     top_n_templates = 10
     templates = data.groupby(["template"])
@@ -81,10 +78,7 @@ def evaluate_template_predictions(
     for temp in top_templates:
         current_keys = keys_of_template.loc[temp]
         used_indices = [key in current_keys for key in keys]
-        cur_labels = [arr[used_indices] for arr in labels]
-        cur_predictions = [arr[used_indices] for arr in predictions]
-        for timeframe_label, timeframe_prediction in zip(cur_labels, cur_predictions):
-            stats.append(evaluate_prediction(timeframe_label, timeframe_prediction))
+        stats.extend(evaluate_key_subset(labels, predictions, used_indices))
 
     plt.figure(figsize=(10, 5))
     plot_multi_stat_data(
@@ -92,11 +86,36 @@ def evaluate_template_predictions(
     )
 
 
+def evaluate_static_dynamic(
+        labels, predictions, testing_timeframes, output_folder, keys, data
+):
+    assert 'dynamic' in data.columns
+    key_groups = (list(data[data['dynamic']]['key'].unique()), list(data[~data['dynamic']]['key'].unique()))
+    stats = []
+    for current_keys in key_groups:
+        used_indices = [key in current_keys for key in keys]
+        stats.extend(evaluate_key_subset(labels, predictions, used_indices))
+
+    plt.figure(figsize=(10, 5))
+    plot_multi_stat_data(
+        stats, testing_timeframes, ["dynamic", "static"], output_folder / "static_dynamic"
+    )
+
+
+def evaluate_key_subset(labels: np.ndarray, predictions: np.ndarray, used_indices: List[bool]):
+    current_evaluation = []
+    cur_labels = [arr[used_indices] for arr in labels]
+    cur_predictions = [arr[used_indices] for arr in predictions]
+    for timeframe_label, timeframe_prediction in zip(cur_labels, cur_predictions):
+        current_evaluation.append(evaluate_prediction(timeframe_label, timeframe_prediction))
+    return current_evaluation
+
+
 def plot_multi_stat_data(
-    stats: List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
-    testing_timeframes: List[int],
-    categories: List[Any],
-    output_file: Path,
+        stats: List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+        testing_timeframes: List[int],
+        categories: List[Any],
+        output_file: Path,
 ) -> None:
     assert all(len(pair) == 2 for single_run in stats for pair in single_run)
     plotting_df = pd.DataFrame(
@@ -111,16 +130,16 @@ def plot_multi_stat_data(
     )
     plotting_df = (
         plotting_df.set_index(["timeframe", "category"])
-        .sort_index()
-        .reset_index()
-        .set_index(["category", "timeframe"])
+            .sort_index()
+            .reset_index()
+            .set_index(["category", "timeframe"])
     )
     plotting_df.plot(kind="bar")
     plt.ylabel("score")
     plt.savefig(output_file, bbox_inches="tight")
 
 
-def evaluate_metric_over_time(labels, predictions, testing_timeframes, output_folder):
+def evaluate_metric_over_time(labels, predictions, testing_timeframes, output_folder, *args, **kwargs):
     for i, timeframe in enumerate(testing_timeframes[:-1]):
         current_labels = labels[i]
         current_predictions = predictions[i]
@@ -156,3 +175,7 @@ def evaluate_metric_over_time(labels, predictions, testing_timeframes, output_fo
         plt.ylim((-0.05, 1.05))
         plt.legend()
         plt.savefig(output_folder / f"over_time_{timeframe}.png", bbox_inches="tight")
+
+
+ALL_EVAL_METHODS = [evaluate_metric_over_time, evaluate_bucketed_predictions, evaluate_template_predictions,
+                    evaluate_static_dynamic]

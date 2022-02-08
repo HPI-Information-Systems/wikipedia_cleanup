@@ -14,13 +14,12 @@ from tqdm.auto import tqdm
 from wikipedia_cleanup.data_filter import (
     KeepAttributesDataFilter,
     OnlyUpdatesDataFilter,
+    StaticInfoboxTemplateDataAdder
 )
 from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.evaluation import (
     create_prediction_output,
-    evaluate_bucketed_predictions,
-    evaluate_metric_over_time,
-    evaluate_template_predictions,
+    ALL_EVAL_METHODS
 )
 from wikipedia_cleanup.predictor import Predictor
 from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
@@ -61,11 +60,13 @@ class TrainAndPredictFramework:
             )
         )
 
-    def load_data(self, input_path: Path, n_files: int, n_jobs: int):
+    def load_data(self, input_path: Path, n_files: int, n_jobs: int, static_attribute_path: Optional[Path] = None):
         filters = [
             OnlyUpdatesDataFilter(),
             KeepAttributesDataFilter(self.relevant_attributes),
         ]
+        if static_attribute_path:
+            filters += [StaticInfoboxTemplateDataAdder(static_attribute_path)]
         self.data = get_data(
             input_path, n_files=n_files, n_jobs=n_jobs, filters=filters  # type: ignore
         )
@@ -218,7 +219,7 @@ class TrainAndPredictFramework:
             print("Results could not be generated. No changes in the test timeframe.")
         return prediction_output
 
-    def generate_plots(self, run_results: Optional[dict] = None):
+    def generate_plots(self, run_results: Optional[dict] = None) -> None:
         print("Starting generating plots.")
         start = time.time()
 
@@ -230,35 +231,21 @@ class TrainAndPredictFramework:
         output_folder = plot_directory(self.run_id)
         output_folder.mkdir(parents=True, exist_ok=True)
 
-        evaluate_metric_over_time(
-            labels, predictions, self.testing_timeframes, output_folder
-        )
-
         train_data = self.data[
             self.data["value_valid_from"] < self.test_start_date.date()
             ]
-        try:
-            evaluate_bucketed_predictions(
-                labels,
-                predictions,
-                self.testing_timeframes,
-                output_folder,
-                keys,
-                train_data,
-            )
-            evaluate_template_predictions(
-                labels,
-                predictions,
-                self.testing_timeframes,
-                output_folder,
-                keys,
-                train_data,
-            )
-        except AssertionError:
-            print(
-                "Some plots failed as generated statistics were not of the right "
-                "format. This is likely due to low amounts of data."
-            )
+
+        evaluation_methods = ALL_EVAL_METHODS
+        for evaluation_method in evaluation_methods:
+            try:
+                evaluation_method(labels,
+                                  predictions,
+                                  self.testing_timeframes,
+                                  output_folder,
+                                  keys,
+                                  train_data)
+            except AssertionError:
+                print(f"{evaluation_method.__name__} failed due to a plot category having no changes.")
 
         end = time.time()
         print(f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}")
@@ -357,8 +344,8 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 2
-    n_jobs = 4
+    n_files = 3
+    n_jobs = 3
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
@@ -367,7 +354,7 @@ if __name__ == "__main__":
     model = PropertyCorrelationPredictor()
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
     # framework = TrainAndPredictFramework(model, ["page_id"])
-    framework.load_data(input_path, n_files, n_jobs)
+    framework.load_data(input_path, n_files, n_jobs, static_attribute_path=Path("../../data/avg_dynamic.csv"))
     framework.fit_model()
     framework.test_model(predict_subset=0.1)
     framework.generate_plots()
