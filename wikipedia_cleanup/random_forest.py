@@ -1,4 +1,5 @@
 import hashlib
+import itertools
 import pickle
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -16,7 +17,7 @@ class RandomForestPredictor(Predictor):
     def __init__(self, use_cache: bool = True) -> None:
         super().__init__()
         self.regressors: dict = {}
-        # contains for a given infobox_propertyname (key) the regressor (value)
+        # contains for a given infobox_property_name (key) the regressor (value)
         self.last_preds: dict = {}
         # contains for a given infobox_propertyname (key) a (date,pred) tuple (value)
         # date is the date of the last change and pred the days until next change
@@ -72,29 +73,38 @@ class RandomForestPredictor(Predictor):
             possible_cached_mapping = self._calculate_cache_name(train_data)
             if self._load_cache(possible_cached_mapping):
                 return
-        key_change_counts = train_data.groupby(keys, sort=False).count()[
-            "value_valid_from"
-        ]
-        # Assumption: data is already sorted by keys so
-        # no further sorting needs to be done
-        start = 0
-        for key_change_count in tqdm(key_change_counts):
-            if key_change_count == 1:
-                continue
-            sample = train_data.iloc[start : start + key_change_count]
-            start += key_change_count
-            sample = sample.iloc[:-1]
-            X = sample[self.get_relevant_attributes()].drop(
-                columns=["value_valid_from", "days_until_next_change"]
+        keys = train_data["key"].unique()
+        columns = train_data.columns.tolist()
+        key_column_idx = columns.index("key")
+        days_until_next_change_column_idx = columns.index("days_until_next_change")
+        key_map = {
+            key: np.array(list(group))
+            for key, group in itertools.groupby(
+                train_data.to_numpy(), lambda x: x[key_column_idx]
             )
-            y = sample["days_until_next_change"]
+        }
+        relevant_train_column_indexes = [
+            columns.index(relevant_attribute)
+            for relevant_attribute in self.get_relevant_attributes()
+        ]
+        relevant_train_column_indexes.remove(columns.index("value_valid_from"))
+        relevant_train_column_indexes.remove(days_until_next_change_column_idx)
+
+        for key in tqdm(keys):
+            current_data = key_map[key]
+            if len(current_data) <= 1:
+                continue
+            sample = current_data[:-1, :]
+            X = sample[:, relevant_train_column_indexes]
+            y = sample[:, days_until_next_change_column_idx].astype(np.int64)
             reg = RandomForestClassifier(
                 random_state=0, n_estimators=10, max_features="auto"
             )
             reg.fit(X, y)
-            self.regressors[sample["key"].iloc[0]] = reg
-            self.last_preds[sample["key"].iloc[0]] = (DUMMY_TIMESTAMP, 0)
+            self.regressors[key] = reg
+            self.last_preds[key] = (DUMMY_TIMESTAMP, 0)
 
+        # used as dummy for date comparison in first prediction
         if self.use_hash:
             possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
             with open(possible_cached_mapping, "wb") as f:

@@ -12,12 +12,13 @@ from sklearn.metrics import precision_recall_fscore_support
 from tqdm.auto import tqdm
 
 from wikipedia_cleanup.data_filter import (
+    AbstractDataFilter,
     KeepAttributesDataFilter,
     OnlyUpdatesDataFilter,
 )
 from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.predictor import Predictor
-from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
+from wikipedia_cleanup.random_forest import RandomForestPredictor
 from wikipedia_cleanup.utils import plot_directory
 
 
@@ -45,11 +46,22 @@ class TrainAndPredictFramework:
         )
         self.data: pd.DataFrame = pd.DataFrame()
 
-    def load_data(self, input_path: Path, n_files: int, n_jobs: int):
-        filters = [
-            OnlyUpdatesDataFilter(),
-            KeepAttributesDataFilter(self.relevant_attributes),
-        ]
+    def load_data(
+        self,
+        input_path: Path,
+        n_files: int,
+        n_jobs: int,
+        appended_filters: List[AbstractDataFilter] = None,
+    ):
+        filters: List[AbstractDataFilter] = [OnlyUpdatesDataFilter()]
+        if appended_filters is not None:
+            print(
+                f"WARNING: Using additional non standard "
+                f"preceding filters for the data loading: {appended_filters}"
+            )
+            filters.extend(appended_filters)
+        filters.append(KeepAttributesDataFilter(self.relevant_attributes))
+
         self.data = get_data(
             input_path, n_files=n_files, n_jobs=n_jobs, filters=filters  # type: ignore
         )
@@ -407,16 +419,26 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 2
+    n_files = 1
     n_jobs = 4
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
-    input_path = Path("../../data/custom-format-default-filtered")
+    # input_path = Path("../../data/custom-format-default-filtered")
 
-    model = PropertyCorrelationPredictor()
+    model = RandomForestPredictor(use_cache=False)
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
     # framework = TrainAndPredictFramework(model, ["page_id"])
-    framework.load_data(input_path, n_files, n_jobs)
+    # framework.load_data(input_path, n_files, n_jobs, [FeatureAdderFilter()])
+    framework.data = pd.read_csv(
+        "/run/media/secret/manjaro-home/secret/mp-data/popular_data_with_features2.csv"
+    )[:1000000]
+    framework.data["value_valid_from"] = pd.to_datetime(
+        framework.data["timestamp"]
+    ).dt.tz_localize(None)
+    group_key = ["infobox_key", "property_name"]
+    framework.data["key"] = list(
+        zip(*[framework.data[group_key] for group_key in framework.group_key])
+    )
     framework.fit_model()
-    framework.test_model(predict_subset=0.1)
+    framework.test_model()
