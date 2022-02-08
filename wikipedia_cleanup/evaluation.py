@@ -62,9 +62,11 @@ def evaluate_bucketed_predictions(
     for low, high in buckets:
         keys_in_bucket = n_changes[(n_changes >= low) & (n_changes < high)].index
         used_indices = pd.DataFrame(keys)[0].isin(keys_in_bucket).to_numpy()
-        stats.extend(evaluate_key_subset(labels, predictions, used_indices))
+        stats.extend(_evaluate_key_subset(labels, predictions, used_indices))
 
-    plot_multi_stat_data(stats, testing_timeframes, buckets, output_folder / "bucketed")
+    _plot_multi_stat_data(
+        stats, testing_timeframes, buckets, output_folder / "bucketed"
+    )
 
 
 def evaluate_template_predictions(
@@ -86,10 +88,10 @@ def evaluate_template_predictions(
     for temp in top_templates:
         current_keys = set(keys_of_template.loc[temp])
         used_indices = [key in current_keys for key in keys]
-        stats.extend(evaluate_key_subset(labels, predictions, used_indices))
+        stats.extend(_evaluate_key_subset(labels, predictions, used_indices))
 
     plt.figure(figsize=(10, 5))
-    plot_multi_stat_data(
+    _plot_multi_stat_data(
         stats, testing_timeframes, top_templates, output_folder / "templates"
     )
 
@@ -110,10 +112,10 @@ def evaluate_static_dynamic(
     stats = []
     for current_keys in key_groups:
         used_indices = [key in current_keys for key in keys]
-        stats.extend(evaluate_key_subset(labels, predictions, used_indices))
+        stats.extend(_evaluate_key_subset(labels, predictions, used_indices))
 
     plt.figure(figsize=(10, 5))
-    plot_multi_stat_data(
+    _plot_multi_stat_data(
         stats,
         testing_timeframes,
         ["dynamic", "static"],
@@ -121,7 +123,7 @@ def evaluate_static_dynamic(
     )
 
 
-def evaluate_key_subset(
+def _evaluate_key_subset(
     labels: np.ndarray, predictions: np.ndarray, used_indices: List[bool]
 ):
     current_evaluation = []
@@ -134,7 +136,7 @@ def evaluate_key_subset(
     return current_evaluation
 
 
-def plot_multi_stat_data(
+def _plot_multi_stat_data(
     stats: List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     testing_timeframes: List[int],
     categories: List[Any],

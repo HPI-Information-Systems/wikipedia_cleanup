@@ -93,13 +93,13 @@ class TrainAndPredictFramework:
         predict_subset: float = 1.0,
         save_results: bool = False,
     ) -> str:
-        keys = self.initialize_keys(randomize, predict_subset)
+        keys = self._initialize_keys(randomize, predict_subset)
         all_day_labels = []
 
         (
             test_dates,
             test_dates_with_testing_timeframes,
-        ) = self.calculate_test_date_metadata()
+        ) = self._calculate_test_date_metadata()
 
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
         # it's ok to discard the time and only retain the date
@@ -121,7 +121,7 @@ class TrainAndPredictFramework:
 
         progress_bar_it = tqdm(keys)
         for n_processed_keys, key in enumerate(progress_bar_it):
-            current_data, additional_current_data = self.select_current_data(
+            current_data, additional_current_data = self._select_current_data(
                 key, key_map, value_valid_from_column_idx, num_columns
             )
 
@@ -130,7 +130,7 @@ class TrainAndPredictFramework:
                 :, value_valid_from_column_idx
             ]
 
-            current_page_predictions = self.make_prediction(
+            current_page_predictions = self._make_prediction(
                 current_data,
                 timestamps,
                 additional_current_data,
@@ -144,83 +144,15 @@ class TrainAndPredictFramework:
             timestamps_set = set(timestamps)
             day_labels = [test_date in timestamps_set for test_date in test_dates]
             all_day_labels.append(day_labels)
-        run_statistics = self.evaluate_predictions(predictions, all_day_labels)
+        run_statistics = self._evaluate_predictions(predictions, all_day_labels)
         if run_statistics:
             self.run_results["keys"] = keys
             output_folder = result_directory(self.run_id)
             output_folder.mkdir(parents=True, exist_ok=True)
-            self.save_run_stats(output_folder, run_statistics)
+            self._save_run_stats(output_folder, run_statistics)
             if save_results:
-                self.save_run_results(output_folder)
+                self._save_run_results(output_folder)
         return run_statistics
-
-    def initialize_keys(self, randomize: bool, predict_subset: float):
-        keys = self.data["key"].unique()
-        if randomize:
-            np.random.shuffle(keys)
-        if predict_subset < 1:
-            print(f"Predicting only {predict_subset:.2%} percent of the data.")
-            subset_idx = math.ceil(len(keys) * predict_subset)
-            keys = keys[:subset_idx]
-        return keys
-
-    def calculate_test_date_metadata(
-        self,
-    ) -> Tuple[List[date], List[Tuple[date, List[Tuple[int, date, int]]]]]:
-        test_dates = [
-            (self.test_start_date + timedelta(days=x)).date()
-            for x in range(self.test_duration)
-        ]
-
-        # precalculate all predict day, week, month, year entries to reuse them
-        test_dates_with_testing_timeframes = []
-        for days_evaluated, first_day_to_predict in enumerate(test_dates):
-            curr_testing_timeframes = []
-            for idx, timeframe in enumerate(self.testing_timeframes):
-                if days_evaluated % timeframe == 0:
-                    prediction_end_date = first_day_to_predict + timedelta(
-                        days=timeframe
-                    )
-                    curr_testing_timeframes.append(
-                        (timeframe, prediction_end_date, idx)
-                    )
-            test_dates_with_testing_timeframes.append(
-                (first_day_to_predict, curr_testing_timeframes)
-            )
-        # test_dates_with_testing_timeframes has the format:
-        # first_date, [timeframe, end_date, timeframe_idx]
-        return test_dates, test_dates_with_testing_timeframes
-
-    def evaluate_predictions(
-        self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
-    ) -> str:
-        prediction_output = ""
-        if np.any(day_labels):
-            print("Starting evaluation.")
-            start = time.time()
-            predictions = [
-                np.array(prediction, dtype=np.bool) for prediction in predictions
-            ]
-            all_day_labels = np.array(day_labels, dtype=np.bool)
-            labels = [
-                self.aggregate_labels(all_day_labels, timeframe)
-                for timeframe in self.testing_timeframes
-            ]
-
-            prediction_stats = []
-            for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
-                prediction_stats.append(create_prediction_output(y_true, y_hat, title))
-            prediction_output = "\n\n".join(prediction_stats)
-
-            self.run_results["labels"] = labels
-            self.run_results["predictions"] = predictions
-            end = time.time()
-            print(
-                f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}"
-            )
-        else:
-            print("Results could not be generated. No changes in the test timeframe.")
-        return prediction_output
 
     def generate_plots(self, run_results: Optional[dict] = None) -> None:
         print("Starting generating plots.")
@@ -255,8 +187,76 @@ class TrainAndPredictFramework:
         end = time.time()
         print(f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}")
 
+    def _initialize_keys(self, randomize: bool, predict_subset: float):
+        keys = self.data["key"].unique()
+        if randomize:
+            np.random.shuffle(keys)
+        if predict_subset < 1:
+            print(f"Predicting only {predict_subset:.2%} percent of the data.")
+            subset_idx = math.ceil(len(keys) * predict_subset)
+            keys = keys[:subset_idx]
+        return keys
+
+    def _calculate_test_date_metadata(
+        self,
+    ) -> Tuple[List[date], List[Tuple[date, List[Tuple[int, date, int]]]]]:
+        test_dates = [
+            (self.test_start_date + timedelta(days=x)).date()
+            for x in range(self.test_duration)
+        ]
+
+        # precalculate all predict day, week, month, year entries to reuse them
+        test_dates_with_testing_timeframes = []
+        for days_evaluated, first_day_to_predict in enumerate(test_dates):
+            curr_testing_timeframes = []
+            for idx, timeframe in enumerate(self.testing_timeframes):
+                if days_evaluated % timeframe == 0:
+                    prediction_end_date = first_day_to_predict + timedelta(
+                        days=timeframe
+                    )
+                    curr_testing_timeframes.append(
+                        (timeframe, prediction_end_date, idx)
+                    )
+            test_dates_with_testing_timeframes.append(
+                (first_day_to_predict, curr_testing_timeframes)
+            )
+        # test_dates_with_testing_timeframes has the format:
+        # first_date, [timeframe, end_date, timeframe_idx]
+        return test_dates, test_dates_with_testing_timeframes
+
+    def _evaluate_predictions(
+        self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
+    ) -> str:
+        prediction_output = ""
+        if np.any(day_labels):
+            print("Starting evaluation.")
+            start = time.time()
+            predictions = [
+                np.array(prediction, dtype=np.bool) for prediction in predictions
+            ]
+            all_day_labels = np.array(day_labels, dtype=np.bool)
+            labels = [
+                self._aggregate_labels(all_day_labels, timeframe)
+                for timeframe in self.testing_timeframes
+            ]
+
+            prediction_stats = []
+            for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
+                prediction_stats.append(create_prediction_output(y_true, y_hat, title))
+            prediction_output = "\n\n".join(prediction_stats)
+
+            self.run_results["labels"] = labels
+            self.run_results["predictions"] = predictions
+            end = time.time()
+            print(
+                f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}"
+            )
+        else:
+            print("Results could not be generated. No changes in the test timeframe.")
+        return prediction_output
+
     @staticmethod
-    def get_data_until(
+    def _get_data_until(
         data: np.ndarray, timestamps: np.ndarray, timestamp: date
     ) -> np.ndarray:
         if len(data) > 0:
@@ -265,7 +265,7 @@ class TrainAndPredictFramework:
         else:
             return data
 
-    def make_prediction(
+    def _make_prediction(
         self,
         current_data: np.ndarray,
         timestamps: np.ndarray,
@@ -283,11 +283,11 @@ class TrainAndPredictFramework:
             first_day_to_predict,
             curr_testing_timeframes,
         ) in test_dates_with_testing_timeframes:
-            property_to_predict_data = self.get_data_until(
+            property_to_predict_data = self._get_data_until(
                 current_data, timestamps, first_day_to_predict
             )
             for timeframe, prediction_end_date, idx in curr_testing_timeframes:
-                related_property_to_predict_data = self.get_data_until(
+                related_property_to_predict_data = self._get_data_until(
                     related_current_data,
                     additional_timestamps,
                     prediction_end_date,
@@ -303,7 +303,7 @@ class TrainAndPredictFramework:
                 )
         return current_page_predictions
 
-    def select_current_data(
+    def _select_current_data(
         self,
         key: Tuple,
         key_map: Dict[Any, np.ndarray],
@@ -326,7 +326,7 @@ class TrainAndPredictFramework:
             additional_current_data = np.empty((0, num_columns))
         return current_data, additional_current_data
 
-    def aggregate_labels(self, labels: np.ndarray, n: int) -> np.ndarray:
+    def _aggregate_labels(self, labels: np.ndarray, n: int) -> np.ndarray:
         if n == 1:
             return labels
         if self.test_duration % n != 0:
@@ -337,12 +337,12 @@ class TrainAndPredictFramework:
         return np.any(padded_labels, axis=2)
 
     @staticmethod
-    def save_run_stats(output_folder: Path, run_statistics: str) -> None:
+    def _save_run_stats(output_folder: Path, run_statistics: str) -> None:
         run_stats_path = output_folder / "stats.txt"
         with open(run_stats_path, "w") as f:
             f.write(run_statistics)
 
-    def save_run_results(self, output_folder: Path):
+    def _save_run_results(self, output_folder: Path):
         run_results_path = output_folder / "results.pickle"
         with open(run_results_path, "wb") as f:
             pickle.dump(self.run_results, f)
