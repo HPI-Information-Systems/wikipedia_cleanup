@@ -14,7 +14,7 @@ def cache_directory() -> Path:
 
 
 def plot_directory(run_id: str = "") -> Path:
-    return folder_in_root("plots", run_id)
+    return result_directory(run_id) / "plots"
 
 
 def result_directory(run_id: str = "") -> Path:
