@@ -11,7 +11,11 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
-from wikipedia_cleanup.data_filter import KeepAttributesDataFilter, StaticInfoboxTemplateDataAdder
+from wikipedia_cleanup.data_filter import (
+    AbstractDataFilter,
+    KeepAttributesDataFilter,
+    StaticInfoboxTemplateDataAdder,
+)
 from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.evaluation import ALL_EVAL_METHODS, create_prediction_output
 from wikipedia_cleanup.predictor import Predictor
@@ -60,7 +64,7 @@ class TrainAndPredictFramework:
         n_jobs: int,
         static_attribute_path: Optional[Path] = None,
     ):
-        filters = [
+        filters: List[AbstractDataFilter] = [
             KeepAttributesDataFilter(self.relevant_attributes),
         ]
         if static_attribute_path:
