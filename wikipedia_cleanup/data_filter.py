@@ -118,6 +118,16 @@ class StaticInfoboxTemplateDataFilter(AbstractDataFilter):
         return result
 
 
+class StaticInfoboxTemplateDataAdder(StaticInfoboxTemplateDataFilter):
+    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        current_property_name = changes[0].property_name
+        current_template = changes[0].template
+        is_dynamic = (current_property_name, current_template) in self.dynamic_index
+        for change in changes:
+            change.dynamic = is_dynamic  # type: ignore
+        return changes
+
+
 class KeepAttributesDataFilter(AbstractDataFilter):
     def __init__(self, attributes_to_keep: List[str]):
         super().__init__()
