@@ -303,6 +303,7 @@ def generate_default_filters() -> List[AbstractDataFilter]:
     return [
         BotRevertsDataFilter(),
         MajorityValuePerDayDataFilter(),
+        OnlyUpdatesDataFilter(),
         MinNumChangesDataFilter(),
     ]
 

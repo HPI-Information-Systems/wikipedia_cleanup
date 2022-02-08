@@ -115,7 +115,7 @@ class PropertyCorrelationPredictor(Predictor):
                 needed_num_changes = arr1[0, idx]
                 for off in range(
                     -min(self.delay_range, idx),
-                    min(self.delay_range, arr2.shape[1] - idx),
+                    min(self.delay_range + 1, arr2.shape[1] - idx),
                 ):
                     used_changes = min(needed_num_changes, arr2[0, idx + off])
                     arr2[0, idx + off] -= used_changes

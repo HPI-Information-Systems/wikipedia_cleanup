@@ -11,11 +11,7 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
-from wikipedia_cleanup.data_filter import (
-    KeepAttributesDataFilter,
-    OnlyUpdatesDataFilter,
-    StaticInfoboxTemplateDataAdder,
-)
+from wikipedia_cleanup.data_filter import KeepAttributesDataFilter, StaticInfoboxTemplateDataAdder
 from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.evaluation import ALL_EVAL_METHODS, create_prediction_output
 from wikipedia_cleanup.predictor import Predictor
@@ -65,7 +61,6 @@ class TrainAndPredictFramework:
         static_attribute_path: Optional[Path] = None,
     ):
         filters = [
-            OnlyUpdatesDataFilter(),
             KeepAttributesDataFilter(self.relevant_attributes),
         ]
         if static_attribute_path:
@@ -112,9 +107,12 @@ class TrainAndPredictFramework:
         columns = self.data.columns.tolist()
         num_columns = len(columns)
         value_valid_from_column_idx = columns.index("value_valid_from")
+        key_column_idx = columns.index("key")
         key_map = {
             key: np.array(list(group))
-            for key, group in itertools.groupby(self.data.to_numpy(), lambda x: x[-1])
+            for key, group in itertools.groupby(
+                self.data.to_numpy(), lambda x: x[key_column_idx]
+            )
         }
 
         progress_bar_it = tqdm(keys)
@@ -352,7 +350,7 @@ if __name__ == "__main__":
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
-    input_path = Path("../../data/custom-format-default-filtered")
+    # input_path = Path("../../data/custom-format-default-filtered")
 
     model = PropertyCorrelationPredictor()
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
