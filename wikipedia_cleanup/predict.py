@@ -364,3 +364,4 @@ if __name__ == "__main__":
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
     framework.test_model(predict_subset=0.1)
+    framework.generate_plots()
