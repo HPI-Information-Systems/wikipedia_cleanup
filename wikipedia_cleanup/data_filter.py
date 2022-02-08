@@ -48,7 +48,7 @@ class AbstractDataFilter(ABC):
         self._filter_stats = FilterStats()
 
     def filter(
-            self, changes: List[InfoboxChange], initial_num_changes: int
+        self, changes: List[InfoboxChange], initial_num_changes: int
     ) -> List[InfoboxChange]:
         if self._filter_stats.initial_num_changes != INITIAL_STATS_VALUE:
             print(
@@ -61,8 +61,8 @@ class AbstractDataFilter(ABC):
         start_idx = 0
         for end_idx in range(len(changes)):
             if (
-                    changes[start_idx].infobox_key != changes[end_idx].infobox_key
-                    or changes[start_idx].property_name != changes[end_idx].property_name
+                changes[start_idx].infobox_key != changes[end_idx].infobox_key
+                or changes[start_idx].property_name != changes[end_idx].property_name
             ):
                 filtered_changes.extend(
                     self._filter_for_property(changes[start_idx:end_idx])
@@ -82,15 +82,15 @@ class AbstractDataFilter(ABC):
     def __str__(self) -> str:
         base_print_width = 30
         return (
-                f'{"+" * base_print_width}\n'
-                f"{self.__class__.__name__}\n"
-                f'{"+" * base_print_width}\n' + str(self.filter_stats)
+            f'{"+" * base_print_width}\n'
+            f"{self.__class__.__name__}\n"
+            f'{"+" * base_print_width}\n' + str(self.filter_stats)
         )
 
 
 class StaticInfoboxTemplateDataFilter(AbstractDataFilter):
     def __init__(
-            self, dynamic_index_file_path: Path, keep_dynamic: bool = True
+        self, dynamic_index_file_path: Path, keep_dynamic: bool = True
     ) -> None:
         super().__init__()
         self.keep_dynamic = keep_dynamic
@@ -99,9 +99,9 @@ class StaticInfoboxTemplateDataFilter(AbstractDataFilter):
             (
                 (property_name, template)
                 for property_name, template in zip(
-                dynamic_index_file["property_name"].to_numpy(),
-                dynamic_index_file["template"].to_numpy(),
-            )
+                    dynamic_index_file["property_name"].to_numpy(),
+                    dynamic_index_file["template"].to_numpy(),
+                )
             )
         )
 
@@ -124,7 +124,7 @@ class StaticInfoboxTemplateDataAdder(StaticInfoboxTemplateDataFilter):
         current_template = changes[0].template
         is_dynamic = (current_property_name, current_template) in self.dynamic_index
         for change in changes:
-            change.dynamic = is_dynamic
+            change.dynamic = is_dynamic  # type: ignore
         return changes
 
 
@@ -137,7 +137,7 @@ class KeepAttributesDataFilter(AbstractDataFilter):
         raise NotImplementedError("This method should never be called.")
 
     def filter(
-            self, changes: List[InfoboxChange], initial_num_changes: int
+        self, changes: List[InfoboxChange], initial_num_changes: int
     ) -> List[InfoboxChange]:
         self.filter_stats.initial_num_changes = initial_num_changes
         self.filter_stats.input_num_changes = len(changes)
@@ -173,7 +173,7 @@ class OnlyUpdatesDataFilter(AbstractDataFilter):
         raise NotImplementedError("This method should never be called.")
 
     def filter(
-            self, changes: List[InfoboxChange], initial_num_changes: int
+        self, changes: List[InfoboxChange], initial_num_changes: int
     ) -> List[InfoboxChange]:
         self._filter_stats.initial_num_changes = initial_num_changes
         self._filter_stats.input_num_changes = len(changes)
@@ -193,7 +193,7 @@ class MajorityValuePerDayDataFilter(AbstractDataFilter):
     """
 
     def filter(
-            self, changes: List[InfoboxChange], initial_num_changes: int
+        self, changes: List[InfoboxChange], initial_num_changes: int
     ) -> List[InfoboxChange]:
         self._filter_stats.initial_num_changes = initial_num_changes
         self._filter_stats.input_num_changes = len(changes)
@@ -201,10 +201,10 @@ class MajorityValuePerDayDataFilter(AbstractDataFilter):
         start_idx = 0
         for end_idx in range(len(changes)):
             if (
-                    changes[start_idx].value_valid_from.date()
-                    != changes[end_idx].value_valid_from.date()
-                    or changes[start_idx].infobox_key != changes[end_idx].infobox_key
-                    or changes[start_idx].property_name != changes[end_idx].property_name
+                changes[start_idx].value_valid_from.date()
+                != changes[end_idx].value_valid_from.date()
+                or changes[start_idx].infobox_key != changes[end_idx].infobox_key
+                or changes[start_idx].property_name != changes[end_idx].property_name
             ):
                 filtered_changes.extend(
                     self._filter_for_property(changes[start_idx:end_idx])
@@ -224,7 +224,7 @@ class MajorityValuePerDayDataFilter(AbstractDataFilter):
             next(
                 filter(
                     lambda change: values_to_occurrences[change.current_value]
-                                   >= max_occurrence,
+                    >= max_occurrence,
                     reversed(changes),
                 )
             )
@@ -238,7 +238,7 @@ class MajorityValuePerDayDataFilter(AbstractDataFilter):
 class AbstractRevertsDataFilter(AbstractDataFilter, ABC):
     @abstractmethod
     def change_pair_needs_to_be_filtered(
-            self, change_a: InfoboxChange, change_b: InfoboxChange
+        self, change_a: InfoboxChange, change_b: InfoboxChange
     ) -> bool:
         pass
 
@@ -247,7 +247,7 @@ class AbstractRevertsDataFilter(AbstractDataFilter, ABC):
         idx = 0
         while idx < len(changes) - 1:
             if self.change_pair_needs_to_be_filtered(
-                    changes[idx], changes[idx + 1]
+                changes[idx], changes[idx + 1]
             ) or self.change_pair_needs_to_be_filtered(changes[idx + 1], changes[idx]):
                 if len(filtered_changes) > 0:
                     dates = [
@@ -272,13 +272,13 @@ class AbstractRevertsDataFilter(AbstractDataFilter, ABC):
 
 class BotRevertsDataFilter(AbstractRevertsDataFilter):
     def change_pair_needs_to_be_filtered(
-            self, change_a: InfoboxChange, change_b: InfoboxChange
+        self, change_a: InfoboxChange, change_b: InfoboxChange
     ) -> bool:
         return (
-                change_a.current_value == change_b.previous_value
-                and change_a.previous_value == change_b.current_value
-                and change_a.value_valid_to == change_b.value_valid_from
-                and change_a.value_valid_from == change_a.value_valid_to
+            change_a.current_value == change_b.previous_value
+            and change_a.previous_value == change_b.current_value
+            and change_a.value_valid_to == change_b.value_valid_from
+            and change_a.value_valid_from == change_a.value_valid_to
         )
 
 
@@ -288,14 +288,14 @@ class EditWarRevertsDataFilter(AbstractRevertsDataFilter):
         self.max_time_to_reverting_change = max_time_to_reverting_change
 
     def change_pair_needs_to_be_filtered(
-            self, change_a: InfoboxChange, change_b: InfoboxChange
+        self, change_a: InfoboxChange, change_b: InfoboxChange
     ) -> bool:
         return (
-                change_a.current_value == change_b.previous_value
-                and change_a.previous_value == change_b.current_value
-                and change_a.value_valid_to == change_b.value_valid_from
-                and (change_a.value_valid_to - change_a.value_valid_from)
-                <= self.max_time_to_reverting_change
+            change_a.current_value == change_b.previous_value
+            and change_a.previous_value == change_b.current_value
+            and change_a.value_valid_to == change_b.value_valid_from
+            and (change_a.value_valid_to - change_a.value_valid_from)
+            <= self.max_time_to_reverting_change
         )
 
 
@@ -308,7 +308,7 @@ def generate_default_filters() -> List[AbstractDataFilter]:
 
 
 def filter_changes_with(
-        changes: List[InfoboxChange], filters: List[AbstractDataFilter]
+    changes: List[InfoboxChange], filters: List[AbstractDataFilter]
 ) -> List[InfoboxChange]:
     if len(filters) == 0:
         return changes
@@ -319,8 +319,8 @@ def filter_changes_with(
 
 
 def merge_filter_stats_into(
-        list_of_filters: List[List[AbstractDataFilter]],
-        target_filters: List[AbstractDataFilter],
+    list_of_filters: List[List[AbstractDataFilter]],
+    target_filters: List[AbstractDataFilter],
 ) -> None:
     if len(list_of_filters) == 0:
         return
@@ -338,10 +338,10 @@ def get_stats_from_filters(filters: List[AbstractDataFilter]) -> str:
     result = ""
     initial_num_changes = filters[0].filter_stats.initial_num_changes
     if any(
-            [
-                data_filter.filter_stats.initial_num_changes != initial_num_changes
-                for data_filter in filters
-            ]
+        [
+            data_filter.filter_stats.initial_num_changes != initial_num_changes
+            for data_filter in filters
+        ]
     ):
         result += (
             "WARNING: Initial number of changes mismatch for the given filters. "
@@ -352,7 +352,7 @@ def get_stats_from_filters(filters: List[AbstractDataFilter]) -> str:
 
 
 def write_filter_stats_to_file(
-        filters: List[AbstractDataFilter], output_folder: Path
+    filters: List[AbstractDataFilter], output_folder: Path
 ) -> None:
     with open(output_folder.joinpath("filter-stats.txt"), "wt") as out_file:
         out_file.write(get_stats_from_filters(filters))

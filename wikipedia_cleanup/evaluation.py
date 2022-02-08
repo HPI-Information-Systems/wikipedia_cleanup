@@ -9,23 +9,21 @@ from sklearn.metrics import precision_recall_fscore_support
 
 
 def stats_to_string(
-    pre_rec_f1_stat: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    pre_rec_f1_sup: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
     num_pos_predictions: int,
     title: str,
 ) -> str:
-    percent_data = pre_rec_f1_stat[3][1] / (
-        pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
-    )
+    percent_data = pre_rec_f1_sup[3][1] / (pre_rec_f1_sup[3][0] + pre_rec_f1_sup[3][1])
     percent_changes_pred = num_pos_predictions / (
-        pre_rec_f1_stat[3][0] + pre_rec_f1_stat[3][1]
+        pre_rec_f1_sup[3][0] + pre_rec_f1_sup[3][1]
     )
 
     output = (
         f"{title} \t\t\tchanges \tno changes \n"
-        f"Precision:\t\t{pre_rec_f1_stat[0][1]:.4f} \t\t{pre_rec_f1_stat[0][0]:1.4f}\n"
-        f"Recall:\t\t\t{pre_rec_f1_stat[1][1]:1.4f} \t\t{pre_rec_f1_stat[1][0]:1.4f}\n"
-        f"F1score:\t\t{pre_rec_f1_stat[2][1]:1.4f} \t\t{pre_rec_f1_stat[2][0]:1.4f}\n"
-        f"Changes of Data:\t{percent_data:.3%}, \tTotal: {pre_rec_f1_stat[3][1]}\n"
+        f"Precision:\t\t{pre_rec_f1_sup[0][1]:.4f} \t\t{pre_rec_f1_sup[0][0]:1.4f}\n"
+        f"Recall:\t\t\t{pre_rec_f1_sup[1][1]:1.4f} \t\t{pre_rec_f1_sup[1][0]:1.4f}\n"
+        f"F1score:\t\t{pre_rec_f1_sup[2][1]:1.4f} \t\t{pre_rec_f1_sup[2][0]:1.4f}\n"
+        f"Changes of Data:\t{percent_data:.3%}, \tTotal: {pre_rec_f1_sup[3][1]}\n"
         f"Changes of Pred:\t{percent_changes_pred:.3%}, \tTotal: {num_pos_predictions}"
     )
     return output
@@ -191,6 +189,8 @@ def evaluate_metric_over_time(
         rec = np.array([stat[1][0] for stat in stats])
         plt.figure()
         if timeframe == 1:
+            if prec.shape[0] % 5 != 0:
+                continue
             average = 5
             prec = np.mean(np.reshape(prec, (-1, average)), axis=1)
             rec = np.mean(np.reshape(rec, (-1, average)), axis=1)
