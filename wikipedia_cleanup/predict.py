@@ -11,10 +11,7 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
-from wikipedia_cleanup.data_filter import (
-    KeepAttributesDataFilter,
-    OnlyUpdatesDataFilter,
-)
+from wikipedia_cleanup.data_filter import KeepAttributesDataFilter
 from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.evaluation import (
     create_prediction_output,
@@ -63,7 +60,6 @@ class TrainAndPredictFramework:
 
     def load_data(self, input_path: Path, n_files: int, n_jobs: int):
         filters = [
-            OnlyUpdatesDataFilter(),
             KeepAttributesDataFilter(self.relevant_attributes),
         ]
         self.data = get_data(
@@ -104,9 +100,13 @@ class TrainAndPredictFramework:
         columns = self.data.columns.tolist()
         num_columns = len(columns)
         value_valid_from_column_idx = columns.index("value_valid_from")
+
+        key_column_idx = columns.index("key")
         key_map = {
             key: np.array(list(group))
-            for key, group in itertools.groupby(self.data.to_numpy(), lambda x: x[-1])
+            for key, group in itertools.groupby(
+                self.data.to_numpy(), lambda x: x[key_column_idx]
+            )
         }
 
         progress_bar_it = tqdm(keys)
