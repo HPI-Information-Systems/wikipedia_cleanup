@@ -14,8 +14,7 @@ class Predictor(ABC):
     ) -> None:
         raise NotImplementedError()
 
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
+    def get_relevant_attributes(self) -> List[str]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -43,8 +42,7 @@ class StaticPredictor(Predictor, ABC):
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return []
 
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
+    def get_relevant_attributes(self) -> List[str]:
         return []
 
 
