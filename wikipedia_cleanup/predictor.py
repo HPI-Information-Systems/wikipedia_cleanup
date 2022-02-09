@@ -1,10 +1,15 @@
+import hashlib
+import pickle
 import random
 from abc import ABC, abstractmethod
 from datetime import date, datetime, timedelta
-from typing import List, Optional, Tuple
+from pathlib import Path
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+from wikipedia_cleanup.utils import cache_directory
 
 
 class Predictor(ABC):
@@ -117,3 +122,75 @@ class MeanPredictor(ZeroPredictor):
         )
         return_value: np.datetime64 = time_series[-1] + mean_time_to_change
         return pd.to_datetime(return_value).date()
+
+
+class CachedPredictor(Predictor):
+    def __init__(self, use_cache: bool = True) -> None:
+        self.use_cache = use_cache
+        self.hash_location = cache_directory() / self.__class__.__name__
+
+    def fit(
+        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+    ) -> None:
+        possible_cached_mapping = Path()
+        if self.use_cache:
+            possible_cached_mapping = self._calculate_cache_name(train_data)
+            if self._load_cache(possible_cached_mapping):
+                self._adjust_cache()
+                return
+
+        self._fit_classifier(train_data, last_day, keys)
+
+        if self.use_cache:
+            self._save_cache(possible_cached_mapping)
+        self._adjust_cache()
+
+    def _calculate_dependent_cache_name(self, data: pd.DataFrame) -> str:
+        hash_string = (
+            f"{data.shape},\n"
+            f"{','.join([str(v) for v in data.columns])},\n"
+            f"{','.join([str(v) for v in data.iloc[0]])},\n"
+            f"{','.join([str(v) for v in data.iloc[-1]])},\n"
+        )
+        return hash_string
+
+    def _calculate_cache_name(self, data: pd.DataFrame):
+        hash_string = self._calculate_dependent_cache_name(data)
+        hash_id = hashlib.md5(hash_string.encode("utf-8")).hexdigest()[:20]
+        possible_cached_mapping = self.hash_location / hash_id
+        return possible_cached_mapping
+
+    @abstractmethod
+    def _fit_classifier(
+        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+    ):
+        pass
+
+    @abstractmethod
+    def _load_cache_file(self, file_object: Any) -> bool:
+        pass
+
+    def _load_cache(self, possible_cached_mapping: Path) -> bool:
+        try:
+            if possible_cached_mapping.exists():
+                print(f"Cache found. Loading from {possible_cached_mapping.name}.")
+                with open(possible_cached_mapping, "rb") as f:
+                    return self._load_cache_file(f)
+            else:
+                print("No cache found, recalculating model.")
+        except EOFError:
+            print("Caching failed, recalculating model.")
+        return False
+
+    @abstractmethod
+    def _get_cache_object(self) -> Any:
+        pass
+
+    def _save_cache(self, possible_cached_mapping: Path) -> None:
+        possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
+        print(f"Saving cache to {possible_cached_mapping.name}.")
+        with open(possible_cached_mapping, "wb") as f:
+            pickle.dump(self._get_cache_object(), f)
+
+    def _adjust_cache(self) -> None:
+        pass
