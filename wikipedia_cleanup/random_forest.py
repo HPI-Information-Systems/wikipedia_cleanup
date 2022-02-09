@@ -1,31 +1,26 @@
-import hashlib
 import itertools
 import pickle
 from datetime import date, datetime, timedelta
-from pathlib import Path
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from tqdm.auto import tqdm
 
-from wikipedia_cleanup.predictor import Predictor
+from wikipedia_cleanup.predictor import CachedPredictor
 
 
-class RandomForestPredictor(Predictor):
+class RandomForestPredictor(CachedPredictor):
     def __init__(self, use_cache: bool = True) -> None:
-        super().__init__()
-        self.regressors: dict = {}
+        super().__init__(use_cache)
         # contains for a given infobox_property_name (key) the regressor (value)
-        self.last_preds: dict = {}
-        # contains for a given infobox_propertyname (key) a (date,pred) tuple (value)
+        self.regressors: dict = {}
+        # contains for a given infobox_property_name (key) a (date,pred) tuple (value)
         # date is the date of the last change and pred the days until next change
-        self.hash_location = Path("cache") / self.__class__.__name__
-        self.use_hash = use_cache
+        self.last_preds: dict = {}
 
-    @staticmethod
-    def get_relevant_ids(identifier: Tuple) -> List[Tuple]:
+    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return []
 
     @staticmethod
@@ -51,28 +46,18 @@ class RandomForestPredictor(Predictor):
             "mean_change_frequency_last_3",
         ]
 
-    def _load_cache(self, possible_cached_mapping: Path) -> bool:
-        try:
-            if possible_cached_mapping.exists():
-                print(f"Cached model found, loading from {possible_cached_mapping}")
-                with open(possible_cached_mapping, "rb") as f:
-                    self.related_properties_lookup = pickle.load(f)
-                return True
-            else:
-                print("No cache found, recalculating model.")
-        except EOFError:
-            print("Caching failed, recalculating model.")
-        return False
+    def _load_cache_file(self, file_object: Any) -> bool:
+        self.regressors = pickle.load(file_object)
+        return True
 
-    def fit(
+    def _get_cache_object(self) -> Any:
+        return self.regressors
+
+    def _fit_classifier(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
         DUMMY_TIMESTAMP = pd.Timestamp("1999-12-31")
         # used as dummy for date comparison in first prediction
-        if self.use_hash:
-            possible_cached_mapping = self._calculate_cache_name(train_data)
-            if self._load_cache(possible_cached_mapping):
-                return
         keys = train_data["key"].unique()
         columns = train_data.columns.tolist()
         key_column_idx = columns.index("key")
@@ -104,18 +89,6 @@ class RandomForestPredictor(Predictor):
             self.regressors[key] = reg
             self.last_preds[key] = (DUMMY_TIMESTAMP, 0)
 
-        # used as dummy for date comparison in first prediction
-        if self.use_hash:
-            possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
-            with open(possible_cached_mapping, "wb") as f:
-                pickle.dump(self.regressors, f)
-
-    def _calculate_cache_name(self, data: pd.DataFrame) -> Path:
-        hash_string = "".join(str(x) for x in [data.shape, data.head(2), data.tail(2)])
-        hash_id = hashlib.md5(hash_string.encode("utf-8")).hexdigest()[:10]
-        possible_cached_mapping = self.hash_location / hash_id
-        return possible_cached_mapping
-
     def predict_timeframe(
         self,
         data_key: np.ndarray,
@@ -130,7 +103,7 @@ class RandomForestPredictor(Predictor):
         data_key_item = data_key[0, key_column_idx]
         if data_key_item not in self.regressors:
             # checks if model has been trained for the key
-            # (it didnt if there was no traindata)
+            # (it didn't if there was no train data)
             return False
 
         value_valid_from_column_idx = columns.index("value_valid_from")

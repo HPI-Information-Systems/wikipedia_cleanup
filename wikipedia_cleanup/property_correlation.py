@@ -1,8 +1,6 @@
-import hashlib
 import pickle
 import re
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -11,22 +9,20 @@ from scipy.sparse import csr_matrix, vstack
 from sklearn.neighbors import NearestNeighbors
 from tqdm.auto import tqdm
 
-from wikipedia_cleanup.predictor import Predictor
-from wikipedia_cleanup.utils import cache_directory
+from wikipedia_cleanup.predictor import CachedPredictor
 
 
-class PropertyCorrelationPredictor(Predictor):
+class PropertyCorrelationPredictor(CachedPredictor):
     def __init__(
         self,
-        allowed_change_delay: int = 3,
         use_cache: bool = True,
+        allowed_change_delay: int = 3,
         num_required_changes: int = 5,
         max_allowed_properties: int = 53,
         percent_allowed_mismatch: float = 0.05,
     ) -> None:
-        super().__init__()
+        super().__init__(use_cache)
         self.related_properties_lookup: dict = {}
-        self.hash_location = cache_directory() / self.__class__.__name__
 
         self.NUM_REQUIRED_CHANGES = num_required_changes
         self.MAX_ALLOWED_PROPERTIES = (
@@ -35,7 +31,6 @@ class PropertyCorrelationPredictor(Predictor):
         # TODO justify choice
         self.PERCENT_ALLOWED_MISMATCHES = percent_allowed_mismatch
 
-        self.use_hash = use_cache
         # TODO justify choice
         self.delay_range = allowed_change_delay
 
@@ -88,42 +83,26 @@ class PropertyCorrelationPredictor(Predictor):
         )
         return min_support_groups
 
-    def _load_cache(self, possible_cached_mapping: Path) -> bool:
-        try:
-            if possible_cached_mapping.exists():
-                with open(possible_cached_mapping, "rb") as f:
-                    cache = pickle.load(f)
-                    if (
-                        cache["num_required_changes"] != self.NUM_REQUIRED_CHANGES
-                        or cache["max_allowed_properties"]
-                        != self.MAX_ALLOWED_PROPERTIES
-                        or cache["percent_allowed_mismatch"]
-                        < self.PERCENT_ALLOWED_MISMATCHES
-                    ):
-                        return False
+    def _load_cache_file(self, file_object: Any) -> bool:
+        cache = pickle.load(file_object)
+        if (
+            cache["num_required_changes"] != self.NUM_REQUIRED_CHANGES
+            or cache["max_allowed_properties"] != self.MAX_ALLOWED_PROPERTIES
+            or cache["percent_allowed_mismatch"] < self.PERCENT_ALLOWED_MISMATCHES
+        ):
+            return False
+        self.related_properties_lookup = cache["related_properties_lookup"]
+        return True
 
-                    print(f"Cached model found, loading from {possible_cached_mapping}")
-                    self.related_properties_lookup = cache["related_properties_lookup"]
-                return True
-            else:
-                print("No cache found, recalculating model.")
-        except EOFError:
-            print("Caching failed, recalculating model.")
-        return False
+    def _get_cache_object(self) -> Any:
+        return {
+            "num_required_changes": self.NUM_REQUIRED_CHANGES,
+            "max_allowed_properties": self.MAX_ALLOWED_PROPERTIES,
+            "percent_allowed_mismatch": self.PERCENT_ALLOWED_MISMATCHES,
+            "related_properties_lookup": self.related_properties_lookup,
+        }
 
-    def _save_cache(self, possible_cached_mapping):
-        possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
-        print(f"Saving cache to {possible_cached_mapping.name}.")
-        with open(possible_cached_mapping, "wb") as f:
-            cache = {
-                "num_required_changes": self.NUM_REQUIRED_CHANGES,
-                "max_allowed_properties": self.MAX_ALLOWED_PROPERTIES,
-                "percent_allowed_mismatch": self.PERCENT_ALLOWED_MISMATCHES,
-                "related_properties_lookup": self.related_properties_lookup,
-            }
-            pickle.dump(cache, f)
-
-    def _prepare_related_properties_lookup_for_inference(self):
+    def _adjust_cache(self):
         for (
             curr_property_key,
             related_properties,
@@ -138,15 +117,9 @@ class PropertyCorrelationPredictor(Predictor):
                 curr_property_key
             ] = filtered_related_properties_without_distances
 
-    def fit(
+    def _fit_classifier(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
-    ) -> None:
-        if self.use_hash:
-            possible_cached_mapping = self._calculate_cache_name(train_data)
-            if self._load_cache(possible_cached_mapping):
-                self._prepare_related_properties_lookup_for_inference()
-                return
-
+    ):
         def percentage_manhatten_adaptive_time_lag(
             arr1: csr_matrix, arr2: csr_matrix
         ) -> float:
@@ -224,11 +197,7 @@ class PropertyCorrelationPredictor(Predictor):
                         for neighbor_idx, distance in zip(neighbors, distances)
                     ]
                     matches[row.selected_key[i]] = match
-
         self.related_properties_lookup = matches
-        if self.use_hash:
-            self._save_cache(possible_cached_mapping)
-        self._prepare_related_properties_lookup_for_inference()
 
     @staticmethod
     def _get_related_page_mapping(links, related_page_index):
@@ -261,19 +230,14 @@ class PropertyCorrelationPredictor(Predictor):
         )
         return links_found
 
-    def _calculate_cache_name(self, data: pd.DataFrame) -> Path:
+    def _calculate_dependent_cache_name(self, data: pd.DataFrame) -> str:
         hash_string = (
-            f"{data.shape},\n"
-            f"{','.join([str(v) for v in data.columns])},\n"
-            f"{','.join([str(v) for v in data.iloc[0]])},\n"
-            f"{','.join([str(v) for v in data.iloc[-1]])},\n"
-            f"{self.NUM_REQUIRED_CHANGES},\n"
+            super()._calculate_dependent_cache_name(data)
+            + f"{self.NUM_REQUIRED_CHANGES},\n"
             f"{self.MAX_ALLOWED_PROPERTIES},\n"
             f"{self.delay_range}"
         )
-        hash_id = hashlib.md5(hash_string.encode("utf-8")).hexdigest()[:20]
-        possible_cached_mapping = self.hash_location / hash_id
-        return possible_cached_mapping
+        return hash_string
 
     def predict_timeframe(
         self,
