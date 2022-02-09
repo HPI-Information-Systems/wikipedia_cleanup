@@ -16,15 +16,24 @@ from wikipedia_cleanup.utils import cache_directory
 
 
 class PropertyCorrelationPredictor(Predictor):
-    NUM_REQUIRED_CHANGES = 5
-    MAX_ALLOWED_PROPERTIES = 55  # Set via boxplot whisker for all links (53)
-    # TODO justify choice
-    PERCENT_ALLOWED_MISMATCHES = 0.05
-
-    def __init__(self, allowed_change_delay: int = 3, use_cache: bool = True) -> None:
+    def __init__(
+        self,
+        allowed_change_delay: int = 3,
+        use_cache: bool = True,
+        num_required_changes: int = 5,
+        max_allowed_properties: int = 53,
+        percent_allowed_mismatch: float = 0.05,
+    ) -> None:
         super().__init__()
         self.related_properties_lookup: dict = {}
         self.hash_location = cache_directory() / self.__class__.__name__
+
+        self.NUM_REQUIRED_CHANGES = num_required_changes
+        self.MAX_ALLOWED_PROPERTIES = (
+            max_allowed_properties  # Set via boxplot whisker for all links (53)
+        )
+        # TODO justify choice
+        self.PERCENT_ALLOWED_MISMATCHES = percent_allowed_mismatch
 
         self.use_hash = use_cache
         # TODO justify choice
@@ -59,9 +68,8 @@ class PropertyCorrelationPredictor(Predictor):
         series[uniques] = counts
         return csr_matrix(series)
 
-    @staticmethod
     def _sparse_time_series_conversion(
-        train_data: pd.DataFrame, keys: List[str]
+        self, train_data: pd.DataFrame, keys: List[str]
     ) -> pd.Series:
         bins = pd.date_range(
             train_data["value_valid_from"].min().date(),
@@ -73,8 +81,7 @@ class PropertyCorrelationPredictor(Predictor):
 
         groups = train_data.groupby(keys)
         min_support_groups = train_data[
-            groups["bin_idx"].transform("count")
-            > PropertyCorrelationPredictor.NUM_REQUIRED_CHANGES
+            groups["bin_idx"].transform("count") > self.NUM_REQUIRED_CHANGES
         ].groupby(list(set(["page_title"] + keys)))
         min_support_groups = min_support_groups["bin_idx"].apply(
             PropertyCorrelationPredictor._create_time_series, duration=total_days
@@ -84,9 +91,19 @@ class PropertyCorrelationPredictor(Predictor):
     def _load_cache(self, possible_cached_mapping: Path) -> bool:
         try:
             if possible_cached_mapping.exists():
-                print(f"Cached model found, loading from {possible_cached_mapping}")
                 with open(possible_cached_mapping, "rb") as f:
-                    self.related_properties_lookup = pickle.load(f)
+                    cache = pickle.load(f)
+                    if (
+                        cache["num_required_changes"] != self.NUM_REQUIRED_CHANGES
+                        or cache["max_allowed_properties"]
+                        != self.MAX_ALLOWED_PROPERTIES
+                        or cache["percent_allowed_mismatch"]
+                        < self.PERCENT_ALLOWED_MISMATCHES
+                    ):
+                        return False
+
+                    print(f"Cached model found, loading from {possible_cached_mapping}")
+                    self.related_properties_lookup = cache["related_properties_lookup"]
                 return True
             else:
                 print("No cache found, recalculating model.")
@@ -94,12 +111,40 @@ class PropertyCorrelationPredictor(Predictor):
             print("Caching failed, recalculating model.")
         return False
 
+    def _save_cache(self, possible_cached_mapping):
+        possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
+        print(f"Saving cache to {possible_cached_mapping.name}.")
+        with open(possible_cached_mapping, "wb") as f:
+            cache = {
+                "num_required_changes": self.NUM_REQUIRED_CHANGES,
+                "max_allowed_properties": self.MAX_ALLOWED_PROPERTIES,
+                "percent_allowed_mismatch": self.PERCENT_ALLOWED_MISMATCHES,
+                "related_properties_lookup": self.related_properties_lookup,
+            }
+            pickle.dump(cache, f)
+
+    def _prepare_related_properties_lookup_for_inference(self):
+        for (
+            curr_property_key,
+            related_properties,
+        ) in self.related_properties_lookup.items():
+            filtered_related_properties_without_distances = []
+            for related_property_key, related_property_distance in related_properties:
+                if related_property_distance <= self.PERCENT_ALLOWED_MISMATCHES:
+                    filtered_related_properties_without_distances.append(
+                        related_property_key
+                    )
+            self.related_properties_lookup[
+                curr_property_key
+            ] = filtered_related_properties_without_distances
+
     def fit(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
         if self.use_hash:
             possible_cached_mapping = self._calculate_cache_name(train_data)
             if self._load_cache(possible_cached_mapping):
+                self._prepare_related_properties_lookup_for_inference()
                 return
 
         def percentage_manhatten_adaptive_time_lag(
@@ -169,20 +214,21 @@ class PropertyCorrelationPredictor(Predictor):
                 metric=percentage_manhatten_adaptive_time_lag_symmetric,
             )
             neigh.fit(input_data)
-            neighbor_indices = neigh.radius_neighbors(return_distance=False)
-            for i, neighbors in enumerate(neighbor_indices):
+            neighbor_distances, neighbor_indices = neigh.radius_neighbors()
+            for i, (neighbors, distances) in enumerate(
+                zip(neighbor_indices, neighbor_distances)
+            ):
                 if len(neighbors) > 0:
                     match = [
-                        row.selected_key[neighbor_idx] for neighbor_idx in neighbors
+                        (row.selected_key[neighbor_idx], distance)
+                        for neighbor_idx, distance in zip(neighbors, distances)
                     ]
                     matches[row.selected_key[i]] = match
 
         self.related_properties_lookup = matches
         if self.use_hash:
-            possible_cached_mapping.parent.mkdir(exist_ok=True, parents=True)
-            print(f"Saving cache to {possible_cached_mapping.name}.")
-            with open(possible_cached_mapping, "wb") as f:
-                pickle.dump(self.related_properties_lookup, f)
+            self._save_cache(possible_cached_mapping)
+        self._prepare_related_properties_lookup_for_inference()
 
     @staticmethod
     def _get_related_page_mapping(links, related_page_index):
@@ -221,9 +267,8 @@ class PropertyCorrelationPredictor(Predictor):
             f"{','.join([str(v) for v in data.columns])},\n"
             f"{','.join([str(v) for v in data.iloc[0]])},\n"
             f"{','.join([str(v) for v in data.iloc[-1]])},\n"
-            f"{PropertyCorrelationPredictor.NUM_REQUIRED_CHANGES},\n"
-            f"{PropertyCorrelationPredictor.MAX_ALLOWED_PROPERTIES},\n"
-            f"{PropertyCorrelationPredictor.PERCENT_ALLOWED_MISMATCHES},\n"
+            f"{self.NUM_REQUIRED_CHANGES},\n"
+            f"{self.MAX_ALLOWED_PROPERTIES},\n"
             f"{self.delay_range}"
         )
         hash_id = hashlib.md5(hash_string.encode("utf-8")).hexdigest()[:20]
