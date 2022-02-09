@@ -13,6 +13,7 @@ from tqdm.auto import tqdm
 
 from wikipedia_cleanup.data_filter import (
     AbstractDataFilter,
+    FeatureAdderFilter,
     KeepAttributesDataFilter,
     StaticInfoboxTemplateDataAdder,
 )
@@ -20,6 +21,7 @@ from wikipedia_cleanup.data_processing import get_data
 from wikipedia_cleanup.evaluation import ALL_EVAL_METHODS, create_prediction_output
 from wikipedia_cleanup.predictor import Predictor
 from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
+from wikipedia_cleanup.random_forest import RandomForestPredictor
 from wikipedia_cleanup.utils import plot_directory, result_directory
 
 
@@ -62,13 +64,20 @@ class TrainAndPredictFramework:
         input_path: Path,
         n_files: int,
         n_jobs: int,
+        appended_filters: List[AbstractDataFilter] = None,
         static_attribute_path: Optional[Path] = None,
     ):
-        filters: List[AbstractDataFilter] = [
-            KeepAttributesDataFilter(self.relevant_attributes),
-        ]
+        filters: List[AbstractDataFilter] = []
+        if appended_filters is not None:
+            print(
+                f"WARNING: Using additional non standard "
+                f"preceding filters for the data loading: {appended_filters}"
+            )
+            filters.extend(appended_filters)
+        filters.append(KeepAttributesDataFilter(self.relevant_attributes))
         if static_attribute_path:
             filters += [StaticInfoboxTemplateDataAdder(static_attribute_path)]
+
         self.data = get_data(
             input_path, n_files=n_files, n_jobs=n_jobs, filters=filters  # type: ignore
         )
@@ -349,22 +358,18 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 3
-    n_jobs = 3
+    n_files = 2
+    n_jobs = 4
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
-    # input_path = Path("../../data/custom-format-default-filtered")
+    input_path = Path("../../data/custom-format-default-filtered")
 
-    model = PropertyCorrelationPredictor()
-    framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
+    model1 = PropertyCorrelationPredictor()
+    model2 = RandomForestPredictor()
+    framework = TrainAndPredictFramework(model2, ["infobox_key", "property_name"])
     # framework = TrainAndPredictFramework(model, ["page_id"])
-    framework.load_data(
-        input_path,
-        n_files,
-        n_jobs,
-        static_attribute_path=Path("../../data/avg_dynamic.csv"),
-    )
+    framework.load_data(input_path, n_files, n_jobs, [FeatureAdderFilter()])
     framework.fit_model()
     framework.test_model(predict_subset=0.1)
     framework.generate_plots()

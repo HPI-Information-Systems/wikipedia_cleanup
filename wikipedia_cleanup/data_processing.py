@@ -166,6 +166,20 @@ def get_data(
     return res_df.sort_index(axis=1)
 
 
+def get_data_single(
+    file: Path,
+    data_filters: Optional[List[AbstractDataFilter]] = None,
+) -> pd.DataFrame:
+    if data_filters is None:
+        data_filters = []
+    changes_and_filters = read_and_filter_file(file, data_filters)
+    all_changes = [changes_and_filters[0]]
+    mapped_filters = [changes_and_filters[1]]
+    all_changes_iterator = itertools.chain.from_iterable(all_changes)
+    merge_filter_stats_into(mapped_filters, data_filters)
+    return pd.DataFrame([change.__dict__ for change in all_changes_iterator])
+
+
 # local test
 if __name__ == "__main__":
     get_data(
