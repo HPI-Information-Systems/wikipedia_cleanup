@@ -11,14 +11,13 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
-from wikipedia_cleanup.data_filter import KeepAttributesDataFilter
-from wikipedia_cleanup.data_processing import get_data
-from wikipedia_cleanup.evaluation import (
-    create_prediction_output,
-    evaluate_bucketed_predictions,
-    evaluate_metric_over_time,
-    evaluate_template_predictions,
+from wikipedia_cleanup.data_filter import (
+    AbstractDataFilter,
+    KeepAttributesDataFilter,
+    StaticInfoboxTemplateDataAdder,
 )
+from wikipedia_cleanup.data_processing import get_data
+from wikipedia_cleanup.evaluation import ALL_EVAL_METHODS, create_prediction_output
 from wikipedia_cleanup.predictor import Predictor
 from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
 from wikipedia_cleanup.utils import plot_directory, result_directory
@@ -58,10 +57,18 @@ class TrainAndPredictFramework:
             )
         )
 
-    def load_data(self, input_path: Path, n_files: int, n_jobs: int):
-        filters = [
+    def load_data(
+        self,
+        input_path: Path,
+        n_files: int,
+        n_jobs: int,
+        static_attribute_path: Optional[Path] = None,
+    ):
+        filters: List[AbstractDataFilter] = [
             KeepAttributesDataFilter(self.relevant_attributes),
         ]
+        if static_attribute_path:
+            filters += [StaticInfoboxTemplateDataAdder(static_attribute_path)]
         self.data = get_data(
             input_path, n_files=n_files, n_jobs=n_jobs, filters=filters  # type: ignore
         )
@@ -73,8 +80,12 @@ class TrainAndPredictFramework:
         )
 
     def fit_model(self):
+        print("Start training.")
+        start = time.time()
         train_data = self.data[self.data["value_valid_from"] < self.test_start_date]
         self.predictor.fit(train_data.copy(), self.test_start_date, self.group_key)
+        end = time.time()
+        print(f"Finished training. Time elapsed: {timedelta(seconds=end - start)}")
 
     def test_model(
         self,
@@ -82,13 +93,13 @@ class TrainAndPredictFramework:
         predict_subset: float = 1.0,
         save_results: bool = False,
     ) -> str:
-        keys = self.initialize_keys(randomize, predict_subset)
+        keys = self._initialize_keys(randomize, predict_subset)
         all_day_labels = []
 
         (
             test_dates,
             test_dates_with_testing_timeframes,
-        ) = self.calculate_test_date_metadata()
+        ) = self._calculate_test_date_metadata()
 
         predictions: List[List[List[bool]]] = [[] for _ in self.testing_timeframes]
         # it's ok to discard the time and only retain the date
@@ -100,7 +111,6 @@ class TrainAndPredictFramework:
         columns = self.data.columns.tolist()
         num_columns = len(columns)
         value_valid_from_column_idx = columns.index("value_valid_from")
-
         key_column_idx = columns.index("key")
         key_map = {
             key: np.array(list(group))
@@ -111,7 +121,7 @@ class TrainAndPredictFramework:
 
         progress_bar_it = tqdm(keys)
         for n_processed_keys, key in enumerate(progress_bar_it):
-            current_data, additional_current_data = self.select_current_data(
+            current_data, additional_current_data = self._select_current_data(
                 key, key_map, value_valid_from_column_idx, num_columns
             )
 
@@ -120,7 +130,7 @@ class TrainAndPredictFramework:
                 :, value_valid_from_column_idx
             ]
 
-            current_page_predictions = self.make_prediction(
+            current_page_predictions = self._make_prediction(
                 current_data,
                 timestamps,
                 additional_current_data,
@@ -134,17 +144,50 @@ class TrainAndPredictFramework:
             timestamps_set = set(timestamps)
             day_labels = [test_date in timestamps_set for test_date in test_dates]
             all_day_labels.append(day_labels)
-        run_statistics = self.evaluate_predictions(predictions, all_day_labels)
+        run_statistics = self._evaluate_predictions(predictions, all_day_labels)
         if run_statistics:
             self.run_results["keys"] = keys
             output_folder = result_directory(self.run_id)
             output_folder.mkdir(parents=True, exist_ok=True)
-            self.save_run_stats(output_folder, run_statistics)
+            self._save_run_stats(output_folder, run_statistics)
             if save_results:
-                self.save_run_results(output_folder)
+                self._save_run_results(output_folder)
         return run_statistics
 
-    def initialize_keys(self, randomize: bool, predict_subset: float):
+    def generate_plots(self, run_results: Optional[dict] = None) -> None:
+        print("Starting generating plots.")
+        start = time.time()
+
+        if not run_results:
+            run_results = self.run_results
+        labels = run_results["labels"]
+        predictions = run_results["predictions"]
+        keys = run_results["keys"]
+        output_folder = plot_directory(self.run_id)
+        output_folder.mkdir(parents=True, exist_ok=True)
+
+        train_data = self.data[
+            self.data["value_valid_from"] < self.test_start_date.date()
+        ]
+
+        evaluation_methods = ALL_EVAL_METHODS
+        for evaluation_method in evaluation_methods:
+            try:
+                evaluation_method(  # type: ignore
+                    labels,
+                    predictions,
+                    self.testing_timeframes,
+                    output_folder,
+                    keys,
+                    train_data,
+                )
+            except Exception:
+                print(f"{evaluation_method.__name__} failed.")
+
+        end = time.time()
+        print(f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}")
+
+    def _initialize_keys(self, randomize: bool, predict_subset: float):
         keys = self.data["key"].unique()
         if randomize:
             np.random.shuffle(keys)
@@ -154,7 +197,7 @@ class TrainAndPredictFramework:
             keys = keys[:subset_idx]
         return keys
 
-    def calculate_test_date_metadata(
+    def _calculate_test_date_metadata(
         self,
     ) -> Tuple[List[date], List[Tuple[date, List[Tuple[int, date, int]]]]]:
         test_dates = [
@@ -181,7 +224,7 @@ class TrainAndPredictFramework:
         # first_date, [timeframe, end_date, timeframe_idx]
         return test_dates, test_dates_with_testing_timeframes
 
-    def evaluate_predictions(
+    def _evaluate_predictions(
         self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
     ) -> str:
         prediction_output = ""
@@ -193,7 +236,7 @@ class TrainAndPredictFramework:
             ]
             all_day_labels = np.array(day_labels, dtype=np.bool)
             labels = [
-                self.aggregate_labels(all_day_labels, timeframe)
+                self._aggregate_labels(all_day_labels, timeframe)
                 for timeframe in self.testing_timeframes
             ]
 
@@ -212,53 +255,8 @@ class TrainAndPredictFramework:
             print("Results could not be generated. No changes in the test timeframe.")
         return prediction_output
 
-    def generate_plots(self, run_results: Optional[dict] = None):
-        print("Starting generating plots.")
-        start = time.time()
-
-        if not run_results:
-            run_results = self.run_results
-        labels = run_results["labels"]
-        predictions = run_results["predictions"]
-        keys = run_results["keys"]
-        output_folder = plot_directory(self.run_id)
-        output_folder.mkdir(parents=True, exist_ok=True)
-
-        evaluate_metric_over_time(
-            labels, predictions, self.testing_timeframes, output_folder
-        )
-
-        train_data = self.data[
-            self.data["value_valid_from"] < self.test_start_date.date()
-        ]
-        try:
-            evaluate_bucketed_predictions(
-                labels,
-                predictions,
-                self.testing_timeframes,
-                output_folder,
-                keys,
-                train_data,
-            )
-            evaluate_template_predictions(
-                labels,
-                predictions,
-                self.testing_timeframes,
-                output_folder,
-                keys,
-                train_data,
-            )
-        except AssertionError:
-            print(
-                "Some plots failed as generated statistics were not of the right "
-                "format. This is likely due to low amounts of data."
-            )
-
-        end = time.time()
-        print(f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}")
-
     @staticmethod
-    def get_data_until(
+    def _get_data_until(
         data: np.ndarray, timestamps: np.ndarray, timestamp: date
     ) -> np.ndarray:
         if len(data) > 0:
@@ -267,7 +265,7 @@ class TrainAndPredictFramework:
         else:
             return data
 
-    def make_prediction(
+    def _make_prediction(
         self,
         current_data: np.ndarray,
         timestamps: np.ndarray,
@@ -285,11 +283,11 @@ class TrainAndPredictFramework:
             first_day_to_predict,
             curr_testing_timeframes,
         ) in test_dates_with_testing_timeframes:
-            property_to_predict_data = self.get_data_until(
+            property_to_predict_data = self._get_data_until(
                 current_data, timestamps, first_day_to_predict
             )
             for timeframe, prediction_end_date, idx in curr_testing_timeframes:
-                related_property_to_predict_data = self.get_data_until(
+                related_property_to_predict_data = self._get_data_until(
                     related_current_data,
                     additional_timestamps,
                     prediction_end_date,
@@ -305,7 +303,7 @@ class TrainAndPredictFramework:
                 )
         return current_page_predictions
 
-    def select_current_data(
+    def _select_current_data(
         self,
         key: Tuple,
         key_map: Dict[Any, np.ndarray],
@@ -328,7 +326,7 @@ class TrainAndPredictFramework:
             additional_current_data = np.empty((0, num_columns))
         return current_data, additional_current_data
 
-    def aggregate_labels(self, labels: np.ndarray, n: int) -> np.ndarray:
+    def _aggregate_labels(self, labels: np.ndarray, n: int) -> np.ndarray:
         if n == 1:
             return labels
         if self.test_duration % n != 0:
@@ -339,20 +337,20 @@ class TrainAndPredictFramework:
         return np.any(padded_labels, axis=2)
 
     @staticmethod
-    def save_run_stats(output_folder: Path, run_statistics: str) -> None:
+    def _save_run_stats(output_folder: Path, run_statistics: str) -> None:
         run_stats_path = output_folder / "stats.txt"
         with open(run_stats_path, "w") as f:
             f.write(run_statistics)
 
-    def save_run_results(self, output_folder: Path):
+    def _save_run_results(self, output_folder: Path):
         run_results_path = output_folder / "results.pickle"
         with open(run_results_path, "wb") as f:
             pickle.dump(self.run_results, f)
 
 
 if __name__ == "__main__":
-    n_files = 4
-    n_jobs = 4
+    n_files = 3
+    n_jobs = 3
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/custom-format-default-filtered"
     )
@@ -361,7 +359,12 @@ if __name__ == "__main__":
     model = PropertyCorrelationPredictor()
     framework = TrainAndPredictFramework(model, ["infobox_key", "property_name"])
     # framework = TrainAndPredictFramework(model, ["page_id"])
-    framework.load_data(input_path, n_files, n_jobs)
+    framework.load_data(
+        input_path,
+        n_files,
+        n_jobs,
+        static_attribute_path=Path("../../data/avg_dynamic.csv"),
+    )
     framework.fit_model()
     framework.test_model(predict_subset=0.1)
     framework.generate_plots()
