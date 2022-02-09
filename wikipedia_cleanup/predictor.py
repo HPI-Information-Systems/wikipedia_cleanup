@@ -105,7 +105,7 @@ class RegressionPredictor(Predictor, ABC):
         first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
-        if not self._should_make_prediction(data_key):
+        if not self._should_make_prediction(data_key, columns):
             return False
         key_column = columns.index("key")
         value_valid_from_idx = columns.index("value_valid_from")
@@ -124,12 +124,12 @@ class RegressionPredictor(Predictor, ABC):
 
     @abstractmethod
     def _predict_next_change(
-        self, time_series: np.ndarray, columns: List[str]
+        self, data_key: np.ndarray, columns: List[str]
     ) -> datetime:
         pass
 
     @abstractmethod
-    def _should_make_prediction(self, data: np.ndarray):
+    def _should_make_prediction(self, data_key: np.ndarray, columns: List[str]):
         pass
 
 
@@ -214,8 +214,8 @@ class MeanPredictor(StaticPredictor, RegressionPredictor):
         return_value: np.datetime64 = changes[-1] + mean_time_to_change
         return pd.to_datetime(return_value).date()
 
-    def _should_make_prediction(self, data):
-        return len(data) >= 2
+    def _should_make_prediction(self, data_key: np.ndarray, columns: List[str]):
+        return len(data_key) >= 2
 
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return [identifier]
