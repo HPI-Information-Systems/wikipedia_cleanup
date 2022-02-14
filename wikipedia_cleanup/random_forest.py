@@ -212,7 +212,7 @@ class RandomForestPredictor(CachedPredictor):
                               else 365 if days_diff<=365 else -1)
             else:
                 sample.append(days_diff)
-            sample_value_valid_from = sample[value_valid_from_column_idx]
+            sample_value_valid_from = last_change
             X_test = sample
             if self.classify:
                 clf = self.classifiers[data_key_item]
