@@ -5,6 +5,7 @@ from typing import Dict, FrozenSet, List, Set, Tuple
 import numpy as np
 import pandas as pd
 from efficient_apriori import apriori
+from tqdm.auto import tqdm
 
 from wikipedia_cleanup.predictor import Predictor
 
@@ -48,9 +49,8 @@ class AssociationRulesTemplatePredictor(Predictor):
         rules: Dict[str, Dict[str, Set[str]]] = collections.defaultdict(
             lambda: collections.defaultdict(set)
         )
-        for template, tl in df.iteritems():
-            if len(tl) <= df.apply(len).sum() * self.min_template_support:
-                continue
+        df = df[df.apply(len) <= df.apply(len).sum() * self.min_template_support]
+        for template, tl in tqdm(df.iteritems(), total=len(df)):
             _, mined_rules = apriori(
                 tl,
                 min_support=self.min_support,
