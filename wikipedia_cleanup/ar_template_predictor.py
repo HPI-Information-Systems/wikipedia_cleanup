@@ -9,12 +9,14 @@ from tqdm.auto import tqdm
 
 from wikipedia_cleanup.predictor import Predictor
 
+tqdm.pandas()
+
 
 class AssociationRulesTemplatePredictor(Predictor):
     def __init__(
         self,
-        min_support: float = 0.1,
-        min_confidence: float = 0.9,
+        min_support: float = 0.05,
+        min_confidence: float = 0.8,
         min_template_support: float = 0.001,
         transaction_freq: str = "W",
     ) -> None:
@@ -42,16 +44,15 @@ class AssociationRulesTemplatePredictor(Predictor):
                     pd.Grouper(key="value_valid_from", freq=self.transaction_freq),
                 ]
             )["property_name"]
-            .apply(frozenset)
+            .progress_apply(frozenset)
             .groupby("template")
-            .apply(tuple)
+            .progress_apply(tuple)
         )
+        df = df[df.apply(len) >= df.apply(len).sum() * self.min_template_support]
         rules: Dict[str, Dict[str, Set[str]]] = collections.defaultdict(
             lambda: collections.defaultdict(set)
         )
         for template, tl in tqdm(df.iteritems(), total=len(df)):
-            if len(tl) <= df.apply(len).sum() * self.min_template_support:
-                continue
             _, mined_rules = apriori(
                 tl,
                 min_support=self.min_support,
