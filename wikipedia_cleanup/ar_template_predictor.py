@@ -49,8 +49,9 @@ class AssociationRulesTemplatePredictor(Predictor):
         rules: Dict[str, Dict[str, Set[str]]] = collections.defaultdict(
             lambda: collections.defaultdict(set)
         )
-        df = df[df.apply(len) <= df.apply(len).sum() * self.min_template_support]
         for template, tl in tqdm(df.iteritems(), total=len(df)):
+            if len(tl) <= df.apply(len).sum() * self.min_template_support:
+                continue
             _, mined_rules = apriori(
                 tl,
                 min_support=self.min_support,
