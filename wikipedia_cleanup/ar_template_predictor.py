@@ -74,7 +74,7 @@ class AssociationRulesTemplatePredictor(Predictor):
         first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
-        if not (bool(len(data_key)) and bool(len(additional_data))):
+        if not (bool(len(additional_data)) and bool(len(data_key))):
             return False
         template = data_key[-1, columns.index("template")]
         prop_name = data_key[-1, columns.index("property_name")]
