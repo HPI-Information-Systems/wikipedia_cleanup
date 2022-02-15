@@ -2,7 +2,7 @@ import calendar
 import itertools
 import pickle
 from datetime import date, datetime, timedelta
-from typing import Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -25,6 +25,7 @@ class RandomForestPredictor(CachedPredictor):
         # date is the date of the last change and pred the days until next change
         self.padding = padding
         self.classify = classify
+        self.date_mapping: Dict[date, pd.Timestamp] = {}
 
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return []
@@ -258,16 +259,28 @@ class RandomForestPredictor(CachedPredictor):
                 return False
 
         if self.padding:
-            first_day_to_predict_pd = pd.to_datetime(first_day_to_predict)
-            sample = []
-            last_change = pd.to_datetime(data_key[-1, value_valid_from_column_idx])
-            sample.append(first_day_to_predict_pd.dayofyear)
-            sample.append(first_day_to_predict_pd.day)
-            sample.append(first_day_to_predict_pd.dayofweek)
-            sample.append(first_day_to_predict_pd.month)
-            sample.append(first_day_to_predict_pd.quarter)
-            sample.append(first_day_to_predict_pd.is_month_start)
-            sample.append(first_day_to_predict_pd.is_month_end)
+            if first_day_to_predict in self.date_mapping.keys():
+                first_day_to_predict_pd = self.date_mapping[first_day_to_predict]
+            else:
+                first_day_to_predict_pd = pd.to_datetime(first_day_to_predict)
+                self.date_mapping[first_day_to_predict] = first_day_to_predict_pd
+
+            np_date = data_key[-1, value_valid_from_column_idx]
+            if np_date in self.date_mapping:
+                last_change = self.date_mapping[np_date]
+            else:
+                last_change = pd.to_datetime(data_key[-1, value_valid_from_column_idx])
+                self.date_mapping[np_date] = last_change
+
+            sample = [
+                first_day_to_predict_pd.dayofyear,
+                first_day_to_predict_pd.day,
+                first_day_to_predict_pd.dayofweek,
+                first_day_to_predict_pd.month,
+                first_day_to_predict_pd.quarter,
+                first_day_to_predict_pd.is_month_start,
+                first_day_to_predict_pd.is_month_end,
+            ]
             # sample.append(first_day_to_predict.is_quarter_start)
             # sample.append(first_day_to_predict.is_quarter_end)
             days_diff = (first_day_to_predict_pd - last_change).days
@@ -285,7 +298,6 @@ class RandomForestPredictor(CachedPredictor):
                 )
             else:
                 sample.append(days_diff)
-            sample_value_valid_from = last_change
             X_test = sample
             if self.classify:
                 clf = self.classifiers[data_key_item]

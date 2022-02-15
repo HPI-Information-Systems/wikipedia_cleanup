@@ -358,7 +358,7 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 2
+    n_files = 1
     n_jobs = 4
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/"
@@ -367,10 +367,11 @@ if __name__ == "__main__":
     # input_path = Path("../../data/custom-format-default-filtered")
 
     model1 = PropertyCorrelationPredictor()
-    model2 = RandomForestPredictor(classify=True, padding=True)
+    model2 = RandomForestPredictor(use_cache=False, classify=False, padding=True)
     framework = TrainAndPredictFramework(model2, ["infobox_key", "property_name"])
     # framework = TrainAndPredictFramework(model, ["page_id"])
     framework.load_data(input_path, n_files, n_jobs)
     framework.fit_model()
-    framework.test_model(predict_subset=0.1)
+    output_str = framework.test_model(predict_subset=0.1)
+    print(output_str)
     framework.generate_plots()
