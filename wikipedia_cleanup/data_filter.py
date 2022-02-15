@@ -7,7 +7,11 @@ from typing import List
 
 import pandas as pd
 
-from wikipedia_cleanup.schema import InfoboxChange, SparseInfoboxChange
+from wikipedia_cleanup.schema import (
+    InfoboxChange,
+    InfoboxChangeWithFeatures,
+    SparseInfoboxChange,
+)
 
 INITIAL_STATS_VALUE = -1
 
@@ -116,6 +120,16 @@ class StaticInfoboxTemplateDataFilter(AbstractDataFilter):
             if (current_property_name, current_template) not in self.dynamic_index:
                 result = changes
         return result
+
+
+class StaticInfoboxTemplateDataAdder(StaticInfoboxTemplateDataFilter):
+    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        current_property_name = changes[0].property_name
+        current_template = changes[0].template
+        is_dynamic = (current_property_name, current_template) in self.dynamic_index
+        for change in changes:
+            change.dynamic = is_dynamic  # type: ignore
+        return changes
 
 
 class KeepAttributesDataFilter(AbstractDataFilter):
@@ -289,10 +303,90 @@ class EditWarRevertsDataFilter(AbstractRevertsDataFilter):
         )
 
 
+class FeatureAdderFilter(AbstractDataFilter):
+    def _filter_for_property(self, changes: List[InfoboxChange]) -> List[InfoboxChange]:
+        DEFAULT_TIMESTAMP = pd.Timestamp("20990101")
+
+        change_timestamps = pd.Series((change.value_valid_from for change in changes))
+        change_timestamps = change_timestamps.dt.normalize().dt.tz_localize(None)
+        day_of_year = change_timestamps.dt.dayofyear
+        day_of_month = change_timestamps.dt.day
+        day_of_week = change_timestamps.dt.dayofweek
+        month_of_year = change_timestamps.dt.month
+        quarter_of_year = change_timestamps.dt.quarter
+        is_month_start = change_timestamps.dt.is_month_start
+        is_month_end = change_timestamps.dt.is_month_end
+        is_quarter_start = change_timestamps.dt.is_quarter_start
+        is_quarter_end = change_timestamps.dt.is_quarter_end
+
+        days_since_last_change = (
+            change_timestamps - change_timestamps.shift(1).fillna(DEFAULT_TIMESTAMP)
+        ).dt.days
+        days_since_last_change = days_since_last_change.copy()
+        days_since_last_change[days_since_last_change < 0] = 0
+
+        days_since_last_2_changes = (
+            change_timestamps - change_timestamps.shift(2).fillna(DEFAULT_TIMESTAMP)
+        ).dt.days
+        days_since_last_2_changes = days_since_last_2_changes.copy()
+        days_since_last_2_changes[days_since_last_2_changes < 0] = 0
+
+        days_since_last_3_changes = (
+            change_timestamps - change_timestamps.shift(3).fillna(DEFAULT_TIMESTAMP)
+        ).dt.days
+        days_since_last_3_changes = days_since_last_3_changes.copy()
+        days_since_last_3_changes[days_since_last_3_changes < 0] = 0
+
+        days_until_next_change = days_since_last_change.shift(-1)
+        days_until_next_change = pd.to_numeric(
+            days_until_next_change.fillna(0), downcast="integer"
+        )
+
+        days_between_last_and_2nd_to_last_change = days_since_last_change.shift(+1)
+        days_between_last_and_2nd_to_last_change = pd.to_numeric(
+            days_between_last_and_2nd_to_last_change.fillna(0), downcast="integer"
+        )
+
+        mean_change_frequency_all_previous = days_since_last_change.expanding().mean()
+
+        mean_change_frequency_last_3 = (
+            days_since_last_change.rolling(3).mean().fillna(0)
+        )
+
+        changes_with_features: List[InfoboxChange] = []
+        for idx, change in enumerate(changes):
+            change_with_feature = InfoboxChangeWithFeatures(
+                day_of_year=day_of_year[idx],
+                day_of_month=day_of_month[idx],
+                day_of_week=day_of_week[idx],
+                month_of_year=month_of_year[idx],
+                quarter_of_year=quarter_of_year[idx],
+                is_month_start=is_month_start[idx],
+                is_month_end=is_month_end[idx],
+                is_quarter_start=is_quarter_start[idx],
+                is_quarter_end=is_quarter_end[idx],
+                days_since_last_change=days_since_last_change[idx],
+                days_since_last_2_changes=days_since_last_2_changes[idx],
+                days_since_last_3_changes=days_since_last_3_changes[idx],
+                days_until_next_change=days_until_next_change[idx],
+                days_between_last_and_2nd_to_last_change=days_between_last_and_2nd_to_last_change[  # noqa: E501
+                    idx
+                ],
+                mean_change_frequency_all_previous=mean_change_frequency_all_previous[
+                    idx
+                ],
+                mean_change_frequency_last_3=mean_change_frequency_last_3[idx],
+                **change.__dict__,
+            )
+            changes_with_features.append(change_with_feature)
+        return changes_with_features
+
+
 def generate_default_filters() -> List[AbstractDataFilter]:
     return [
         BotRevertsDataFilter(),
         MajorityValuePerDayDataFilter(),
+        OnlyUpdatesDataFilter(),
         MinNumChangesDataFilter(),
     ]
 
