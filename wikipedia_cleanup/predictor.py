@@ -15,7 +15,7 @@ from wikipedia_cleanup.utils import cache_directory
 class Predictor(ABC):
     @abstractmethod
     def fit(
-        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+            self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
         raise NotImplementedError()
 
@@ -24,12 +24,12 @@ class Predictor(ABC):
 
     @abstractmethod
     def predict_timeframe(
-        self,
-        data_key: np.ndarray,
-        additional_data: np.ndarray,
-        columns: List[str],
-        first_day_to_predict: date,
-        timeframe: int,
+            self,
+            data_key: np.ndarray,
+            additional_data: np.ndarray,
+            columns: List[str],
+            first_day_to_predict: date,
+            timeframe: int,
     ) -> bool:
         raise NotImplementedError()
 
@@ -40,7 +40,7 @@ class Predictor(ABC):
 
 class StaticPredictor(Predictor, ABC):
     def fit(
-        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+            self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
         pass
 
@@ -53,24 +53,24 @@ class StaticPredictor(Predictor, ABC):
 
 class ZeroPredictor(StaticPredictor):
     def predict_timeframe(
-        self,
-        data_key: np.ndarray,
-        additional_data: np.ndarray,
-        columns: List[str],
-        first_day_to_predict: date,
-        timeframe: int,
+            self,
+            data_key: np.ndarray,
+            additional_data: np.ndarray,
+            columns: List[str],
+            first_day_to_predict: date,
+            timeframe: int,
     ) -> bool:
         return False
 
 
 class OnePredictor(StaticPredictor):
     def predict_timeframe(
-        self,
-        data_key: np.ndarray,
-        additional_data: np.ndarray,
-        columns: List[str],
-        first_day_to_predict: date,
-        timeframe: int,
+            self,
+            data_key: np.ndarray,
+            additional_data: np.ndarray,
+            columns: List[str],
+            first_day_to_predict: date,
+            timeframe: int,
     ) -> bool:
         return True
 
@@ -80,12 +80,12 @@ class RandomPredictor(StaticPredictor):
         self.p = p
 
     def predict_timeframe(
-        self,
-        data_key: np.ndarray,
-        additional_data: np.ndarray,
-        columns: List[str],
-        first_day_to_predict: date,
-        timeframe: int,
+            self,
+            data_key: np.ndarray,
+            additional_data: np.ndarray,
+            columns: List[str],
+            first_day_to_predict: date,
+            timeframe: int,
     ) -> bool:
         return random.random() <= self.p
 
@@ -98,12 +98,12 @@ class RegressionPredictor(Predictor, ABC):
         self.last_known_prediction = False
 
     def predict_timeframe(
-        self,
-        data_key: np.ndarray,
-        additional_data: np.ndarray,
-        columns: List[str],
-        first_day_to_predict: date,
-        timeframe: int,
+            self,
+            data_key: np.ndarray,
+            additional_data: np.ndarray,
+            columns: List[str],
+            first_day_to_predict: date,
+            timeframe: int,
     ) -> bool:
         if not self._should_make_prediction(data_key, columns):
             return False
@@ -118,13 +118,13 @@ class RegressionPredictor(Predictor, ABC):
         self.last_known_key = current_key
         self.last_known_timestamp = data_key[-1, value_valid_from_idx]
         self.last_known_prediction = (
-            first_day_to_predict <= pred <= first_day_to_predict + timedelta(timeframe)
+                first_day_to_predict <= pred <= first_day_to_predict + timedelta(timeframe)
         )
         return self.last_known_prediction
 
     @abstractmethod
     def _predict_next_change(
-        self, data_key: np.ndarray, columns: List[str]
+            self, data_key: np.ndarray, columns: List[str]
     ) -> datetime:
         pass
 
@@ -139,7 +139,7 @@ class CachedPredictor(Predictor):
         self.hash_location = cache_directory() / self.__class__.__name__
 
     def fit(
-        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+            self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
         possible_cached_mapping = Path()
         if self.use_cache:
@@ -171,7 +171,7 @@ class CachedPredictor(Predictor):
 
     @abstractmethod
     def _fit_classifier(
-        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+            self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ):
         pass
 
@@ -208,11 +208,22 @@ class CachedPredictor(Predictor):
 class MeanPredictor(StaticPredictor, RegressionPredictor):
     def _predict_next_change(self, data: np.ndarray, columns: List[str]) -> datetime:
         changes = data[:, columns.index("value_valid_from")]
-        mean_time_to_change: np.timedelta64 = np.mean(
+        mean_time_to_change: datetime = np.mean(
             changes[1:] - changes[0:-1]
         )  # type: ignore
-        return_value: np.datetime64 = changes[-1] + mean_time_to_change
-        return pd.to_datetime(return_value).date()
+        return changes[-1] + mean_time_to_change
+
+    def _should_make_prediction(self, data_key: np.ndarray, columns: List[str]):
+        return len(data_key) >= 2
+
+    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
+        return [identifier]
+
+
+class LastChangePredictor(MeanPredictor):
+    def _predict_next_change(self, data: np.ndarray, columns: List[str]) -> datetime:
+        changes = data[:, columns.index("value_valid_from")]
+        return changes[-1] + (changes[-1] - changes[-2])
 
     def _should_make_prediction(self, data_key: np.ndarray, columns: List[str]):
         return len(data_key) >= 2
