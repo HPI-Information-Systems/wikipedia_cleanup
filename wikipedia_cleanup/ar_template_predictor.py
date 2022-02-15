@@ -13,8 +13,8 @@ from wikipedia_cleanup.predictor import Predictor
 class AssociationRulesTemplatePredictor(Predictor):
     def __init__(
         self,
-        min_support: float = 0.05,
-        min_confidence: float = 0.8,
+        min_support: float = 0.1,
+        min_confidence: float = 0.9,
         min_template_support: float = 0.001,
         transaction_freq: str = "W",
     ) -> None:
@@ -72,7 +72,7 @@ class AssociationRulesTemplatePredictor(Predictor):
         first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
-        if not additional_data:
+        if not (bool(len(data_key)) and bool(len(additional_data))):
             return False
         template = data_key[-1, columns.index("template")]
         prop_name = data_key[-1, columns.index("property_name")]
@@ -83,7 +83,9 @@ class AssociationRulesTemplatePredictor(Predictor):
             additional_data[:, columns.index("value_valid_from")]
             >= first_day_to_predict
         ]
-        return np.isin(relevant_rows[:, columns.index("property_name")], lhss).any()
+        return np.isin(
+            relevant_rows[:, columns.index("property_name")], tuple(lhss)
+        ).any()
 
     @staticmethod
     def get_relevant_attributes() -> List[str]:

@@ -345,15 +345,18 @@ class TrainAndPredictFramework:
         relevant_keys = list(filter(key.__ne__, relevant_keys))
         if len(relevant_keys) != 0:
             additional_current_data_list = [
-                key_map[relevant_key] for relevant_key in relevant_keys
+                key_map[relevant_key]
+                for relevant_key in relevant_keys
+                if relevant_key in key_map.keys()
             ]
+            if not additional_current_data_list:
+                return current_data, np.empty((0, num_columns))
             additional_current_data = np.concatenate(additional_current_data_list)
             additional_current_data = additional_current_data[
                 additional_current_data[:, value_valid_from_column_idx].argsort()
             ]
-        else:
-            additional_current_data = np.empty((0, num_columns))
-        return current_data, additional_current_data
+            return current_data, additional_current_data
+        return current_data, np.empty((0, num_columns))
 
     def aggregate_labels(self, labels: np.ndarray, n: int) -> np.ndarray:
         if n == 1:
