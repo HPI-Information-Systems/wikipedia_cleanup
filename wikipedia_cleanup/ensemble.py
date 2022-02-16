@@ -1,3 +1,4 @@
+from abc import ABC
 from datetime import date, datetime
 from typing import Callable, List, Tuple
 
@@ -8,7 +9,7 @@ from tqdm.auto import tqdm
 from wikipedia_cleanup.predictor import Predictor
 
 
-class BasicEnsemble(Predictor):
+class BasicEnsemble(ABC, Predictor):
     def __init__(self, predictors: List[Predictor]):
         self._predictors = predictors
 
@@ -16,7 +17,7 @@ class BasicEnsemble(Predictor):
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
         for predictor in tqdm(self._predictors):
-            predictor.fit(train_data, last_day, keys)
+            predictor.fit(train_data.copy(), last_day, keys)
 
     def get_relevant_attributes(self) -> List[str]:
         all_relevant_attributes = set()
@@ -88,7 +89,7 @@ class AndEnsemble(FunctionEnsemble):
 class AverageEnsemble(FunctionEnsemble):
     def __init__(self, predictors: List[Predictor]):
         weights = np.ones(len(predictors)) / len(predictors)
-        super().__init__(predictors, lambda x: sum(weights * x) >= 0.5)
+        super().__init__(predictors, lambda x: sum(x) / len(x) >= 0.5)
 
 
 class MajorityEnsemble(FunctionEnsemble):
