@@ -9,7 +9,7 @@ from tqdm.auto import tqdm
 from wikipedia_cleanup.predictor import Predictor
 
 
-class BasicEnsemble(ABC, Predictor):
+class BasicEnsemble(Predictor, ABC):
     def __init__(self, predictors: List[Predictor]):
         self._predictors = predictors
 
@@ -88,7 +88,6 @@ class AndEnsemble(FunctionEnsemble):
 
 class AverageEnsemble(FunctionEnsemble):
     def __init__(self, predictors: List[Predictor]):
-        weights = np.ones(len(predictors)) / len(predictors)
         super().__init__(predictors, lambda x: sum(x) / len(x) >= 0.5)
 
 
