@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-from line_profiler_pycharm import profile
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from tqdm.auto import tqdm
 
@@ -80,7 +79,6 @@ class RandomForestPredictor(CachedPredictor):
         else:
             return self.regressors
 
-    @profile
     def _fit_classifier(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
@@ -233,7 +231,6 @@ class RandomForestPredictor(CachedPredictor):
 
             self.last_preds[key] = (DUMMY_TIMESTAMP, 0)
 
-    @profile
     def predict_timeframe(
         self,
         data_key: np.ndarray,
@@ -281,8 +278,6 @@ class RandomForestPredictor(CachedPredictor):
                 first_day_to_predict_pd.is_month_start,
                 first_day_to_predict_pd.is_month_end,
             ]
-            # sample.append(first_day_to_predict.is_quarter_start)
-            # sample.append(first_day_to_predict.is_quarter_end)
             days_diff = (first_day_to_predict_pd - last_change).days
             if self.classify:
                 sample.append(
