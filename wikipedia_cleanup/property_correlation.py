@@ -259,7 +259,7 @@ class PropertyCorrelationPredictor(CachedPredictor):
         if len(additional_data) == 0:
             return False
         col_idx = columns.index("value_valid_from")
-        return additional_data[-1:, col_idx][0] >= first_day_to_predict
+        return additional_data[-1, col_idx] >= first_day_to_predict
 
     def get_relevant_attributes(self) -> List[str]:
         return [
