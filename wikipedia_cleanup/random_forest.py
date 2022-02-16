@@ -24,8 +24,7 @@ class RandomForestPredictor(CachedPredictor, RegressionPredictor):
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return []
 
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
+    def get_relevant_attributes(self) -> List[str]:
         return [
             "value_valid_from",
             "day_of_year",  # values from feature engineering
