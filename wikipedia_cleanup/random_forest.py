@@ -145,6 +145,7 @@ class RandomForestPredictor(CachedPredictor):
                     padded_sample[:, 8] = timeframe_since_last_change 
                     padded_sample[:, 9] = timeframe_til_next_change
                 else:
+
                     padded_sample[:, 8] = ranges # days since last change
                     padded_sample[:, 9] = reverted_ranges # days until next change
                 X = padded_sample[:, 1:9]
@@ -223,8 +224,8 @@ class RandomForestPredictor(CachedPredictor):
             self.last_preds[data_key_item] = [first_day_to_predict, pred]
         else:
             sample = data_key[-1, ...]
-            sample_value_valid_from = sample[value_valid_from_column_idx]
-            if self.last_preds[data_key_item][0] != sample_value_valid_from:
+            date_of_last_change = sample[value_valid_from_column_idx]
+            if self.last_preds[data_key_item][0] != date_of_last_change:
             # check if we already predicted next change for that day
                 indices = [
                     columns.index(attr)
@@ -239,10 +240,12 @@ class RandomForestPredictor(CachedPredictor):
                 else:
                     reg = self.regressors[data_key_item]
                     pred = int(reg.predict(X_test)[0])
-                self.last_preds[data_key_item] = [sample_value_valid_from, pred]
+                self.last_preds[data_key_item] = [date_of_last_change, pred]
             else:
                 pred = self.last_preds[data_key_item][1]
+        if self.padding:
+            return pred <= timeframe
         return (
             first_day_to_predict
-            <= (first_day_to_predict + timedelta(days=int(pred)))
+            <= (date_of_last_change + timedelta(days=int(pred)))
             < first_day_to_predict + timedelta(days=timeframe))
