@@ -58,7 +58,7 @@ class AssociationRulesPredictor(Predictor):
         first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
-        if not (bool(len(additional_data)) and bool(len(data_key))):
+        if not len(additional_data):
             return False
         return (
             additional_data[:, columns.index("value_valid_from")]
@@ -67,7 +67,7 @@ class AssociationRulesPredictor(Predictor):
 
     @staticmethod
     def get_relevant_attributes() -> List[str]:
-        return ["value_valid_from", "infobox_key", "property_name"]
+        return ["value_valid_from", "property_name"]
 
     def get_relevant_ids(  # type: ignore
         self, identifier: Tuple[str, str]

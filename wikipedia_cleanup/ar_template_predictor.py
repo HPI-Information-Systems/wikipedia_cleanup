@@ -48,7 +48,8 @@ class AssociationRulesTemplatePredictor(Predictor):
             .groupby("template")
             .progress_apply(tuple)
         )
-        df = df[df.apply(len) >= df.apply(len).sum() * self.min_template_support]
+        lengths = df.apply(len)
+        df = df[lengths >= lengths.sum() * self.min_template_support]
         rules: Dict[str, Dict[str, Set[str]]] = collections.defaultdict(
             lambda: collections.defaultdict(set)
         )
@@ -91,7 +92,7 @@ class AssociationRulesTemplatePredictor(Predictor):
 
     @staticmethod
     def get_relevant_attributes() -> List[str]:
-        return ["value_valid_from", "template", "property_name"]
+        return ["value_valid_from", "infobox_key", "template", "property_name"]
 
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         templates = self.template_mapping.get(identifier[0], frozenset())
