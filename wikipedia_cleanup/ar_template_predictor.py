@@ -1,4 +1,5 @@
 import collections
+import math
 from bisect import bisect_left
 from datetime import date, datetime
 from typing import Dict, FrozenSet, List, Set, Tuple
@@ -19,6 +20,8 @@ class AssociationRulesTemplatePredictor(Predictor):
         min_support: float = 0.05,
         min_confidence: float = 0.8,
         min_template_support: float = 0.001,
+        val_size: float = 0.2,
+        val_precision: float = 0.8,
         transaction_freq: str = "W",
     ) -> None:
         super().__init__()
@@ -26,19 +29,13 @@ class AssociationRulesTemplatePredictor(Predictor):
         self.min_confidence: float = min_confidence
         self.min_template_support: float = min_template_support
         self.transaction_freq: str = transaction_freq
+        self.val_size: float = val_size
+        self.val_precision: float = val_precision
 
-    def fit(
-        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
-    ) -> None:
-        self.template_mapping: Dict[str, FrozenSet[str]] = (
-            train_data.groupby("infobox_key")["template"].apply(frozenset).to_dict()
-        )
-        df = train_data[
-            ["infobox_key", "value_valid_from", "template", "property_name"]
-        ].copy()
-        df["value_valid_from"] = pd.to_datetime(df["value_valid_from"])
-        df = (
-            df.groupby(
+    def transform_data(self, train_data: pd.DataFrame) -> pd.Series:
+        return (
+            train_data[["infobox_key", "value_valid_from", "template", "property_name"]]
+            .groupby(
                 [
                     "infobox_key",
                     "template",
@@ -49,12 +46,42 @@ class AssociationRulesTemplatePredictor(Predictor):
             .groupby("template")
             .progress_apply(tuple)
         )
-        lengths = df.apply(len)
-        df = df[lengths >= lengths.sum() * self.min_template_support]
+
+    def precision(
+        self, transactions: Tuple[FrozenSet[str], ...], rhs: str, lhs: str
+    ) -> float:
+        true_positives = 0
+        false_positives = 0
+        for transaction in transactions:
+            if lhs in transaction:
+                if rhs in transaction:
+                    true_positives += 1
+                else:
+                    false_positives += 1
+        denominator = true_positives + false_positives
+        if not denominator:
+            return float("nan")
+        return true_positives / denominator
+
+    def fit(
+        self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
+    ) -> None:
+        self.template_mapping: Dict[str, FrozenSet[str]] = (
+            train_data.groupby("infobox_key")["template"].apply(frozenset).to_dict()
+        )
+        train_data["value_valid_from"] = pd.to_datetime(train_data["value_valid_from"])
+        train_size = math.floor(len(train_data) * (1 - self.val_size))
+        train_df = self.transform_data(train_data.iloc[:train_size])
+        val_df = self.transform_data(train_data.iloc[train_size:])
+        del train_data
+        train_df = train_df.reindex(val_df.index).dropna()
+        lengths = train_df.apply(len)
+        train_df = train_df[lengths >= lengths.sum() * self.min_template_support]
+        del lengths
         rules: Dict[str, Dict[str, Set[str]]] = collections.defaultdict(
             lambda: collections.defaultdict(set)
         )
-        for template, tl in tqdm(df.iteritems(), total=len(df)):
+        for template, tl in tqdm(train_df.iteritems(), total=len(train_df)):
             _, mined_rules = apriori(
                 tl,
                 min_support=self.min_support,
@@ -64,8 +91,27 @@ class AssociationRulesTemplatePredictor(Predictor):
             for rule in mined_rules:
                 rules[template][rule.rhs[0]].add(rule.lhs[0])
         self.rules: Dict[str, Dict[str, FrozenSet[str]]] = {
-            template: {key: frozenset(value) for key, value in template_rules.items()}
+            template: {
+                rhs: frozenset(
+                    {
+                        lhs
+                        for lhs in lhss
+                        if self.precision(val_df[template], rhs, lhs)
+                        >= self.val_precision
+                    }
+                )
+                for rhs, lhss in template_rules.items()
+            }
             for template, template_rules in rules.items()
+        }
+        self.rules = {
+            template: {rhs: lhss for rhs, lhss in template_rules.items() if lhss}
+            for template, template_rules in self.rules.items()
+        }
+        self.rules = {
+            template: template_rules
+            for template, template_rules in self.rules.items()
+            if template_rules
         }
 
     def predict_timeframe(
@@ -76,18 +122,20 @@ class AssociationRulesTemplatePredictor(Predictor):
         first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
-        if not (bool(len(additional_data)) and bool(len(data_key))):
+        if not len(data_key) or not len(additional_data):
             return False
         template = data_key[-1, columns.index("template")]
-        prop_name = data_key[-1, columns.index("property_name")]
-        if template not in self.rules or prop_name not in self.rules[template]:
+        if template not in self.rules:
             return False
-        lhss = self.rules[template][prop_name]
+        rhs = data_key[-1, columns.index("property_name")]
+        if rhs not in self.rules[template]:
+            return False
+        lhss = self.rules[template][rhs]
         offset = bisect_left(
             additional_data[:, columns.index("value_valid_from")], first_day_to_predict
         )
-        for prop_name in additional_data[offset:, columns.index("property_name")]:
-            if prop_name in lhss:
+        for lhs in additional_data[offset:, columns.index("property_name")]:
+            if lhs in lhss:
                 return True
         return False
 
