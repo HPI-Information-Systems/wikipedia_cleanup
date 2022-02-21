@@ -1,5 +1,4 @@
 import collections
-import math
 from bisect import bisect_left
 from datetime import date, datetime
 from typing import Dict, FrozenSet, List, Set, Tuple
@@ -9,9 +8,26 @@ import pandas as pd
 from efficient_apriori import apriori
 from tqdm.auto import tqdm
 
+from wikipedia_cleanup.ar.utils import precision, train_val_split
 from wikipedia_cleanup.predictor import Predictor
 
 tqdm.pandas()
+
+
+def transform_data(train_data: pd.DataFrame, transaction_freq: str) -> pd.Series:
+    return (
+        train_data[["infobox_key", "value_valid_from", "template", "property_name"]]
+        .groupby(
+            [
+                "infobox_key",
+                "template",
+                pd.Grouper(key="value_valid_from", freq=transaction_freq),
+            ]
+        )["property_name"]
+        .progress_apply(frozenset)
+        .groupby("template")
+        .progress_apply(tuple)
+    )
 
 
 class AssociationRulesTemplatePredictor(Predictor):
@@ -32,37 +48,6 @@ class AssociationRulesTemplatePredictor(Predictor):
         self.val_size: float = val_size
         self.val_precision: float = val_precision
 
-    def transform_data(self, train_data: pd.DataFrame) -> pd.Series:
-        return (
-            train_data[["infobox_key", "value_valid_from", "template", "property_name"]]
-            .groupby(
-                [
-                    "infobox_key",
-                    "template",
-                    pd.Grouper(key="value_valid_from", freq=self.transaction_freq),
-                ]
-            )["property_name"]
-            .progress_apply(frozenset)
-            .groupby("template")
-            .progress_apply(tuple)
-        )
-
-    def precision(
-        self, transactions: Tuple[FrozenSet[str], ...], rhs: str, lhs: str
-    ) -> float:
-        true_positives = 0
-        false_positives = 0
-        for transaction in transactions:
-            if lhs in transaction:
-                if rhs in transaction:
-                    true_positives += 1
-                else:
-                    false_positives += 1
-        denominator = true_positives + false_positives
-        if not denominator:
-            return float("nan")
-        return true_positives / denominator
-
     def fit(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
@@ -70,9 +55,9 @@ class AssociationRulesTemplatePredictor(Predictor):
             train_data.groupby("infobox_key")["template"].apply(frozenset).to_dict()
         )
         train_data["value_valid_from"] = pd.to_datetime(train_data["value_valid_from"])
-        train_size = math.floor(len(train_data) * (1 - self.val_size))
-        train_df = self.transform_data(train_data.iloc[:train_size])
-        val_df = self.transform_data(train_data.iloc[train_size:])
+        train_df, val_df = train_val_split(train_data, self.val_size)
+        train_df = transform_data(train_df, self.transaction_freq)
+        val_df = transform_data(val_df, self.transaction_freq)
         del train_data
         train_df = train_df.reindex(val_df.index).dropna()
         lengths = train_df.apply(len)
@@ -96,8 +81,7 @@ class AssociationRulesTemplatePredictor(Predictor):
                     {
                         lhs
                         for lhs in lhss
-                        if self.precision(val_df[template], rhs, lhs)
-                        >= self.val_precision
+                        if precision(val_df[template], rhs, lhs) >= self.val_precision
                     }
                 )
                 for rhs, lhss in template_rules.items()
