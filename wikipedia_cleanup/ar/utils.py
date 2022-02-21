@@ -1,5 +1,5 @@
 import math
-from typing import FrozenSet, Tuple
+from typing import FrozenSet, Hashable, Tuple
 
 import pandas as pd
 
@@ -12,7 +12,9 @@ def train_val_split(
     return train_data.iloc[:cutoff], train_data.iloc[cutoff:]
 
 
-def precision(transactions: Tuple[FrozenSet[str], ...], rhs: str, lhs: str) -> float:
+def precision(
+    transactions: Tuple[FrozenSet[Hashable], ...], rhs: Hashable, lhs: Hashable
+) -> float:
     true_positives = 0
     false_positives = 0
     for transaction in transactions:

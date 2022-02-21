@@ -14,10 +14,9 @@ from wikipedia_cleanup.predictor import Predictor
 tqdm.pandas()
 
 
-def transform_data(train_data: pd.DataFrame, transaction_freq: str) -> pd.Series:
+def transform_data(data: pd.DataFrame, transaction_freq: str) -> pd.Series:
     return (
-        train_data[["infobox_key", "value_valid_from", "template", "property_name"]]
-        .groupby(
+        data.groupby(
             [
                 "infobox_key",
                 "template",
@@ -55,7 +54,12 @@ class AssociationRulesTemplatePredictor(Predictor):
             train_data.groupby("infobox_key")["template"].apply(frozenset).to_dict()
         )
         train_data["value_valid_from"] = pd.to_datetime(train_data["value_valid_from"])
-        train_df, val_df = train_val_split(train_data, self.val_size)
+        train_df, val_df = train_val_split(
+            train_data[
+                ["infobox_key", "value_valid_from", "template", "property_name"]
+            ].sort_values("value_valid_from"),
+            self.val_size,
+        )
         train_df = transform_data(train_df, self.transaction_freq)
         val_df = transform_data(val_df, self.transaction_freq)
         del train_data
@@ -74,28 +78,13 @@ class AssociationRulesTemplatePredictor(Predictor):
                 max_length=2,
             )
             for rule in mined_rules:
-                rules[template][rule.rhs[0]].add(rule.lhs[0])
+                rhs = rule.rhs[0]
+                lhs = rule.lhs[0]
+                if precision(val_df[template], rhs, lhs) >= self.val_precision:
+                    rules[template][rhs].add(lhs)
         self.rules: Dict[str, Dict[str, FrozenSet[str]]] = {
-            template: {
-                rhs: frozenset(
-                    {
-                        lhs
-                        for lhs in lhss
-                        if precision(val_df[template], rhs, lhs) >= self.val_precision
-                    }
-                )
-                for rhs, lhss in template_rules.items()
-            }
-            for template, template_rules in rules.items()
-        }
-        self.rules = {
-            template: {rhs: lhss for rhs, lhss in template_rules.items() if lhss}
+            template: {rhs: frozenset(lhss) for rhs, lhss in template_rules.items()}
             for template, template_rules in self.rules.items()
-        }
-        self.rules = {
-            template: template_rules
-            for template, template_rules in self.rules.items()
-            if template_rules
         }
 
     def predict_timeframe(

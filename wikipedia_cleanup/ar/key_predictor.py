@@ -7,9 +7,22 @@ import pandas as pd
 from efficient_apriori import apriori
 from tqdm.auto import tqdm
 
+from wikipedia_cleanup.ar.utils import precision, train_val_split
 from wikipedia_cleanup.predictor import Predictor
 
 tqdm.pandas()
+
+
+def transform_data(
+    data: pd.DataFrame, transaction_freq: str
+) -> Tuple[FrozenSet[Tuple[str, str]], ...]:
+    return tuple(
+        val
+        for val in data.groupby(
+            [pd.Grouper(key="value_valid_from", freq=transaction_freq)]
+        )["key"].progress_apply(frozenset)
+        if val
+    )
 
 
 class AssociationRulesPredictor(Predictor):
@@ -17,26 +30,32 @@ class AssociationRulesPredictor(Predictor):
         self,
         min_support: float = 0.2,
         min_confidence: float = 0.8,
+        val_size: float = 0.2,
+        val_precision: float = 0.8,
         transaction_freq: str = "D",
     ) -> None:
         super().__init__()
         self.min_support: float = min_support
         self.min_confidence: float = min_confidence
+        self.val_size: float = val_size
+        self.val_precision: float = val_precision
         self.transaction_freq: str = transaction_freq
 
     def fit(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ) -> None:
-        df = train_data[["value_valid_from", "key"]].copy()
-        df["value_valid_from"] = pd.to_datetime(df["value_valid_from"])
+        train_data["value_valid_from"] = pd.to_datetime(train_data["value_valid_from"])
+        train_df, val_df = train_val_split(
+            train_data[["value_valid_from", "key"]].sort_values("value_valid_from"),
+            self.val_size,
+        )
+        del train_data
+        train_tl = transform_data(train_df, self.transaction_freq)
+        del train_df
+        val_tl = transform_data(val_df, self.transaction_freq)
+        del val_df
         _, mined_rules = apriori(
-            tuple(
-                val
-                for val in df.groupby(
-                    [pd.Grouper(key="value_valid_from", freq=self.transaction_freq)]
-                )["key"].progress_apply(frozenset)
-                if val
-            ),
+            train_tl,
             min_support=self.min_support,
             min_confidence=self.min_confidence,
             max_length=2,
@@ -45,9 +64,12 @@ class AssociationRulesPredictor(Predictor):
             set
         )
         for rule in mined_rules:
-            rules[rule.rhs[0]].add(rule.lhs[0])
+            rhs = rule.rhs[0]
+            lhs = rule.lhs[0]
+            if precision(val_tl, rhs, lhs) >= self.val_precision:
+                rules[rhs].add(lhs)
         self.rules: Dict[Tuple[str, str], FrozenSet[Tuple[str, str]]] = {
-            k: frozenset(v) for k, v in rules.items()
+            rhs: frozenset(lhss) for rhs, lhss in rules.items()
         }
 
     def predict_timeframe(
