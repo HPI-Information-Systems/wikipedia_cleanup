@@ -84,7 +84,7 @@ class AssociationRulesTemplatePredictor(Predictor):
                     rules[template][rhs].add(lhs)
         self.rules: Dict[str, Dict[str, FrozenSet[str]]] = {
             template: {rhs: frozenset(lhss) for rhs, lhss in template_rules.items()}
-            for template, template_rules in self.rules.items()
+            for template, template_rules in rules.items()
         }
 
     def predict_timeframe(
