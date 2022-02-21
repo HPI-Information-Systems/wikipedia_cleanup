@@ -1,4 +1,5 @@
 import collections
+from bisect import bisect_left
 from datetime import date, datetime
 from typing import Dict, FrozenSet, List, Set, Tuple
 
@@ -79,16 +80,16 @@ class AssociationRulesTemplatePredictor(Predictor):
             return False
         template = data_key[-1, columns.index("template")]
         prop_name = data_key[-1, columns.index("property_name")]
-        lhss = self.rules.get(template, {}).get(prop_name, frozenset())
-        if not lhss:
+        if template not in self.rules or prop_name not in self.rules[template]:
             return False
-        relevant_rows = additional_data[
-            additional_data[:, columns.index("value_valid_from")]
-            >= first_day_to_predict
-        ]
-        return np.isin(
-            relevant_rows[:, columns.index("property_name")], tuple(lhss)
-        ).any()
+        lhss = self.rules[template][prop_name]
+        offset = bisect_left(
+            additional_data[:, columns.index("value_valid_from")], first_day_to_predict
+        )
+        for prop_name in additional_data[offset:, columns.index("property_name")]:
+            if prop_name in lhss:
+                return True
+        return False
 
     @staticmethod
     def get_relevant_attributes() -> List[str]:

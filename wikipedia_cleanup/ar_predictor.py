@@ -61,9 +61,9 @@ class AssociationRulesPredictor(Predictor):
         if not len(additional_data):
             return False
         return (
-            additional_data[:, columns.index("value_valid_from")]
+            additional_data[-1:, columns.index("value_valid_from")]
             >= first_day_to_predict
-        ).any()
+        )
 
     @staticmethod
     def get_relevant_attributes() -> List[str]:
