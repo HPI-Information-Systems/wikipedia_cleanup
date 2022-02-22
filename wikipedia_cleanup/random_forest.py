@@ -12,13 +12,14 @@ from wikipedia_cleanup.predictor import CachedPredictor
 
 
 class RandomForestPredictor(CachedPredictor):
-    def __init__(self, use_cache: bool = True) -> None:
+    def __init__(self, use_cache: bool = True, threshold: float = 0.0) -> None:
         super().__init__(use_cache)
         # contains for a given infobox_property_name (key) the regressor (value)
-        self.regressors: dict = {}
+        self.classifiers: dict = {}
         # contains for a given infobox_property_name (key) a (date,pred) tuple (value)
         # date is the date of the last change and pred the days until next change
         self.last_preds: dict = {}
+        self.threshold = threshold
 
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return []
@@ -47,11 +48,11 @@ class RandomForestPredictor(CachedPredictor):
         ]
 
     def _load_cache_file(self, file_object: Any) -> bool:
-        self.regressors = pickle.load(file_object)
+        self.classifiers = pickle.load(file_object)
         return True
 
     def _get_cache_object(self) -> Any:
-        return self.regressors
+        return self.classifiers
 
     def _fit_classifier(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
@@ -86,7 +87,7 @@ class RandomForestPredictor(CachedPredictor):
                 random_state=0, n_estimators=10, max_features="auto"
             )
             reg.fit(X, y)
-            self.regressors[key] = reg
+            self.classifiers[key] = reg
             self.last_preds[key] = (DUMMY_TIMESTAMP, 0)
 
     def predict_timeframe(
@@ -101,7 +102,7 @@ class RandomForestPredictor(CachedPredictor):
             return False
         key_column_idx = columns.index("key")
         data_key_item = data_key[0, key_column_idx]
-        if data_key_item not in self.regressors:
+        if data_key_item not in self.classifiers:
             # checks if model has been trained for the key
             # (it didn't if there was no train data)
             return False
@@ -110,16 +111,22 @@ class RandomForestPredictor(CachedPredictor):
         sample = data_key[-1, ...]
         sample_value_valid_from = sample[value_valid_from_column_idx]
         if self.last_preds[data_key_item][0] != sample_value_valid_from:
-            reg = self.regressors[data_key_item]
             indices = [
                 columns.index(attr)
                 for attr in self.get_relevant_attributes()
                 if not (attr == "value_valid_from" or attr == "days_until_next_change")
             ]
             X_test = sample[indices].reshape(1, -1)
-            pred = int(reg.predict(X_test)[0])
-            self.last_preds[data_key_item] = (sample_value_valid_from, pred)
 
+            clf = self.classifiers[data_key_item]
+            pred_probs = clf.predict_proba(X_test)[0]
+            if pred_probs.max()>=self.threshold:
+                classes= self.classifiers[data_key_item].classes_
+                pred=int(classes[pred_probs.argmax()])
+            else:
+                pred=9999
+
+            self.last_preds[data_key_item] = (sample_value_valid_from, pred)
         else:
             pred = self.last_preds[data_key_item][1]
 
