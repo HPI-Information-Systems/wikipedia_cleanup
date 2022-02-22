@@ -4,6 +4,7 @@ personal-knowledge.txt
 garbage
 cache
 plots
+results/
 
 .vscode
 .DS_Store
