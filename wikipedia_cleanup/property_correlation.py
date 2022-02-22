@@ -59,8 +59,8 @@ class PropertyCorrelationPredictor(CachedPredictor):
     @staticmethod
     def _create_time_series(bin_idx_and_num_changes: Any, duration: int) -> csr_matrix:
         num_changes = np.array(bin_idx_and_num_changes["num_changes"])
-        series = np.zeros(duration)
         positions = np.array(bin_idx_and_num_changes["bin_idx"])
+        series = np.zeros(duration)
         series[positions] = num_changes
         return csr_matrix(series)
 
