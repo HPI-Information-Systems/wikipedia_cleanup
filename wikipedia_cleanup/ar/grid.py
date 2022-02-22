@@ -1,7 +1,6 @@
 import collections
 import functools
 import itertools
-import math
 import operator
 import resource
 from pathlib import Path
@@ -29,20 +28,21 @@ def limit_memory(maxsize: int) -> None:
 
 
 limit_memory(128_000_000_000)
-n_files = math.ceil(585 / 3)
+n_files = 585
 n_jobs = 6
 input_path = Path("data/new_custom/")
 # /san2/data/change-exploration/mp2021_wiki_cleanup/new_costum_filtered_format
 
 grid, grid_len = generate_grid(
+    transaction_freq=["W"],
+    val_size=[0.2, 0.1],
+    val_precision=[0.9],
+    min_template_support=[0.0, 0.001],
     min_support=[0.01, 0.025, 0.05],
     min_confidence=[0.7, 0.8, 0.9],
-    min_template_support=[0.0, 0.001],
-    val_size=[0.2, 0.1],
-    val_precision=[0.7, 0.8, 0.9],
-    transaction_freq=["W", "D"],
 )
-for grid_entry in tqdm(grid, total=grid_len):
+for i, grid_entry in enumerate(tqdm(grid)):
+    print(f"Starting {i+1}/{grid_len} ({(i+1)/grid_len:.1%})")
     model = AssociationRulesTemplatePredictor(
         min_support=grid_entry.min_support,
         min_confidence=grid_entry.min_confidence,
