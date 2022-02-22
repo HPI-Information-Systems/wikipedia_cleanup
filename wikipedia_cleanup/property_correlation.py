@@ -57,10 +57,11 @@ class PropertyCorrelationPredictor(CachedPredictor):
         return related_page_index
 
     @staticmethod
-    def _create_time_series(a: Any, duration: int) -> csr_matrix:
+    def _create_time_series(bin_idx_and_num_changes: Any, duration: int) -> csr_matrix:
+        num_changes = np.array(bin_idx_and_num_changes["num_changes"])
         series = np.zeros(duration)
-        uniques, counts = np.unique(a, return_counts=True)
-        series[uniques] = counts
+        positions = np.array(bin_idx_and_num_changes["bin_idx"])
+        series[positions] = num_changes
         return csr_matrix(series)
 
     def _sparse_time_series_conversion(
@@ -71,14 +72,15 @@ class PropertyCorrelationPredictor(CachedPredictor):
             train_data["value_valid_from"].max().date() + timedelta(1),
         )
         total_days = len(bins)
-        bins = pd.cut(train_data["value_valid_from"], bins, labels=False)
+        bins = pd.cut(train_data["value_valid_from"], bins, labels=False, right=False)
         train_data["bin_idx"] = bins
 
         groups = train_data.groupby(keys)
         min_support_groups = train_data[
             groups["bin_idx"].transform("count") > self.NUM_REQUIRED_CHANGES
         ].groupby(list(set(["page_title"] + keys)))
-        min_support_groups = min_support_groups["bin_idx"].apply(
+
+        min_support_groups = min_support_groups.apply(
             PropertyCorrelationPredictor._create_time_series, duration=total_days
         )
         return min_support_groups
@@ -270,6 +272,7 @@ class PropertyCorrelationPredictor(CachedPredictor):
             "property_name",
             "value_valid_from",
             "current_value",
+            "num_changes",
         ]
 
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
