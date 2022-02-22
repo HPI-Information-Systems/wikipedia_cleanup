@@ -19,7 +19,7 @@ class RandomForestPredictor(CachedPredictor):
         # contains for a given infobox_property_name (key) a (date,pred) tuple (value)
         # date is the date of the last change and pred the days until next change
         self.last_preds: dict = {}
-        self.threshold = threshold
+        self.threshold: float = threshold
 
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return []
@@ -120,11 +120,11 @@ class RandomForestPredictor(CachedPredictor):
 
             clf = self.classifiers[data_key_item]
             pred_probs = clf.predict_proba(X_test)[0]
-            if pred_probs.max()>=self.threshold:
-                classes= self.classifiers[data_key_item].classes_
-                pred=int(classes[pred_probs.argmax()])
+            if pred_probs.max() >= self.threshold:
+                classes = self.classifiers[data_key_item].classes_
+                pred = int(classes[pred_probs.argmax()])
             else:
-                pred=9999
+                pred = 9999
 
             self.last_preds[data_key_item] = (sample_value_valid_from, pred)
         else:
