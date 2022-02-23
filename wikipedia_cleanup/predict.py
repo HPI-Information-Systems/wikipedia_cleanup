@@ -357,7 +357,7 @@ class TrainAndPredictFramework:
 
 
 if __name__ == "__main__":
-    n_files = 20
+    n_files = 2
     n_jobs = 4
     input_path = Path(
         "/run/media/secret/manjaro-home/secret/mp-data/new_costum_filtered_format"

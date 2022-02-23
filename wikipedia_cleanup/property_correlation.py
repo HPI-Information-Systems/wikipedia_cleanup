@@ -83,6 +83,7 @@ class PropertyCorrelationPredictor(CachedPredictor):
         min_support_groups = min_support_groups.apply(
             PropertyCorrelationPredictor._create_time_series, duration=total_days
         )
+        min_support_groups.rename("bin_idx", inplace=True)
         return min_support_groups
 
     def _load_cache_file(self, file_object: Any) -> bool:
