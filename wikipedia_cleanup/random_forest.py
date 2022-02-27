@@ -37,11 +37,6 @@ class RandomForestPredictor(CachedPredictor):
                 "day_of_month",
                 "day_of_week",
                 "month_of_year",
-                "quarter_of_year",
-                "is_month_start",
-                "is_month_end",
-                # "is_quarter_start",
-                # "is_quarter_end",
                 "days_since_last_change",
                 "days_until_next_change",
             ]
@@ -52,11 +47,6 @@ class RandomForestPredictor(CachedPredictor):
                 "day_of_month",
                 "day_of_week",
                 "month_of_year",
-                "quarter_of_year",
-                "is_month_start",
-                "is_month_end",
-                "is_quarter_start",
-                "is_quarter_end",
                 "days_since_last_change",
                 "days_since_last_2_changes",
                 "days_since_last_3_changes",
@@ -130,7 +120,6 @@ class RandomForestPredictor(CachedPredictor):
                     np.concatenate(reverted_range_list).ravel(), [0]
                 )
                 # pad all days between first and last change
-                # TODO: maybe use only random subset for padding
                 padded_dates = np.arange(
                     sample[:, columns.index("value_valid_from")]
                     .min()
@@ -161,38 +150,7 @@ class RandomForestPredictor(CachedPredictor):
                     int(padded.strftime("%-m")) for padded in padded_dates
                 ]  # month of year
                 # needs to be a custom function as strftime does
-                # not support quarters, only pandas.datetime does
-                padded_sample[:, 5] = [
-                    1 if month < 4 else 2 if month < 7 else 3 if month < 10 else 4
-                    for month in padded_sample[:, 4]
-                ]  # quarter of year
-                padded_sample[:, 6] = [
-                    True if day == 1 else False for day in padded_sample[:, 2]
-                ]  # start of month
-                padded_sample[:, 7] = [
-                    True
-                    if int(padded.strftime("%-d"))
-                    == calendar.monthrange(
-                        int(padded.strftime("%Y")), int(padded.strftime("%-m"))
-                    )[1]
-                    else False
-                    for padded in padded_dates
-                ]  # end of month
-                # leaving out start and end of quarter for now as they would
-                # need a custom function too and probably won't add lots of value
                 if self.classify:
-                    timeframe_since_last_change = [
-                        1
-                        if timeframe <= 1
-                        else 7
-                        if timeframe <= 7
-                        else 30
-                        if timeframe <= 30
-                        else 365
-                        if timeframe <= 365
-                        else 9999
-                        for timeframe in ranges
-                    ]
                     timeframe_til_next_change = [
                         1
                         if timeframe <= 1
@@ -205,26 +163,26 @@ class RandomForestPredictor(CachedPredictor):
                         else 9999
                         for timeframe in reverted_ranges
                     ]
-                    padded_sample[:, 8] = timeframe_since_last_change
-                    padded_sample[:, 9] = timeframe_til_next_change
+                    padded_sample[:, 5] = ranges
+                    padded_sample[:, 6] = timeframe_til_next_change
                 else:
-                    padded_sample[:, 8] = ranges  # days since last change
-                    padded_sample[:, 9] = reverted_ranges  # days until next change
-                X = padded_sample[:, 1:9]
-                y = padded_sample[:, 9]
+                    padded_sample[:, 5] = ranges  # days since last change
+                    padded_sample[:, 6] = reverted_ranges  # days until next change
+                X = padded_sample[:, 1:6]
+                y = padded_sample[:, 6]
             else:
                 X = sample[:, relevant_train_column_indexes]
                 y = sample[:, columns.index("days_until_next_change")]
             y = y.astype("int")
             if self.classify:
                 clf = RandomForestClassifier(
-                    random_state=0, n_estimators=10, max_features="auto"
-                )
+                    random_state=0, n_estimators=10, max_features="auto", n_jobs=1    
+                    )
                 clf.fit(X, y)
                 self.classifiers[key] = clf
             else:
                 reg = RandomForestRegressor(
-                    random_state=0, n_estimators=10, max_features="auto"
+                    random_state=0, n_estimators=10, max_features="auto",
                 )
                 reg.fit(X, y)
                 self.regressors[key] = reg
@@ -241,6 +199,7 @@ class RandomForestPredictor(CachedPredictor):
     ) -> bool:
         if len(data_key) == 0:
             return False
+        threshold = 0.0
         key_column_idx = columns.index("key")
         data_key_item = data_key[0, key_column_idx]
         value_valid_from_column_idx = columns.index("value_valid_from")
@@ -274,9 +233,6 @@ class RandomForestPredictor(CachedPredictor):
                 first_day_to_predict_pd.day,
                 first_day_to_predict_pd.dayofweek,
                 first_day_to_predict_pd.month,
-                first_day_to_predict_pd.quarter,
-                first_day_to_predict_pd.is_month_start,
-                first_day_to_predict_pd.is_month_end,
             ]
             days_diff = (first_day_to_predict_pd - last_change).days
             if self.classify:
@@ -318,7 +274,12 @@ class RandomForestPredictor(CachedPredictor):
                 X_test = sample[indices].reshape(1, -1)
                 if self.classify:
                     clf = self.classifiers[data_key_item]
-                    pred = clf.predict(X_test)[0]
+                    pred_probs = clf.predict_proba(X_test)[0] 
+                    classes= self.classifiers[data_key_item].classes_ 
+                    if pred_probs.max()>=threshold: 
+                        pred=int(classes[pred_probs.argmax()]) #clf.predict(X_test)[0]
+                    else: 
+                        pred=9999
                 else:
                     reg = self.regressors[data_key_item]
                     pred = int(reg.predict(X_test)[0])
