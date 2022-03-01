@@ -18,7 +18,7 @@ from wikipedia_cleanup.data_filter import (
     StaticInfoboxTemplateDataAdder,
 )
 from wikipedia_cleanup.data_processing import get_data
-from wikipedia_cleanup.evaluation import ALL_EVAL_METHODS, create_prediction_output
+from wikipedia_cleanup.evaluation import ALL_EVAL_METHODS, create_prediction_output, evaluate_prediction
 from wikipedia_cleanup.predictor import Predictor
 from wikipedia_cleanup.property_correlation import PropertyCorrelationPredictor
 from wikipedia_cleanup.random_forest import RandomForestPredictor
@@ -32,7 +32,7 @@ class TrainAndPredictFramework:
         group_key: List[str],
         test_start_date: datetime = datetime(2018, 9, 1),
         test_duration: int = 365,
-        run_id: Optional[str] = None,
+        run_id: Optional[str] = None
     ):
         self.test_start_date = test_start_date
         self.test_duration = test_duration
@@ -250,10 +250,17 @@ class TrainAndPredictFramework:
             ]
 
             prediction_stats = []
+            pred_stats = []
             for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
+                pred_stats.append({"prec_recall": evaluate_prediction(y_true, y_hat),
+                                      "y_hat": y_hat,
+                                      "y_true": y_true
+                                    })
                 prediction_stats.append(create_prediction_output(y_true, y_hat, title))
-            prediction_output = "\n\n".join(prediction_stats)
 
+            prediction_output = "\n\n".join(prediction_stats)
+            
+            self.pred_stats = pred_stats
             self.run_results["labels"] = labels
             self.run_results["predictions"] = predictions
             end = time.time()
