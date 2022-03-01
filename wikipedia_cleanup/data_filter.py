@@ -313,11 +313,6 @@ class FeatureAdderFilter(AbstractDataFilter):
         day_of_month = change_timestamps.dt.day
         day_of_week = change_timestamps.dt.dayofweek
         month_of_year = change_timestamps.dt.month
-        quarter_of_year = change_timestamps.dt.quarter
-        is_month_start = change_timestamps.dt.is_month_start
-        is_month_end = change_timestamps.dt.is_month_end
-        is_quarter_start = change_timestamps.dt.is_quarter_start
-        is_quarter_end = change_timestamps.dt.is_quarter_end
 
         days_since_last_change = (
             change_timestamps - change_timestamps.shift(1).fillna(DEFAULT_TIMESTAMP)
@@ -360,11 +355,6 @@ class FeatureAdderFilter(AbstractDataFilter):
                 day_of_month=day_of_month[idx],
                 day_of_week=day_of_week[idx],
                 month_of_year=month_of_year[idx],
-                quarter_of_year=quarter_of_year[idx],
-                is_month_start=is_month_start[idx],
-                is_month_end=is_month_end[idx],
-                is_quarter_start=is_quarter_start[idx],
-                is_quarter_end=is_quarter_end[idx],
                 days_since_last_change=days_since_last_change[idx],
                 days_since_last_2_changes=days_since_last_2_changes[idx],
                 days_since_last_3_changes=days_since_last_3_changes[idx],

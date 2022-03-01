@@ -28,22 +28,16 @@ class RandomForestPredictor(CachedPredictor):
     def get_relevant_attributes() -> List[str]:
         return [
             "value_valid_from",
-            "day_of_year",  # values from feature engineering
+            "day_of_year",
             "day_of_month",
             "day_of_week",
             "month_of_year",
-            "quarter_of_year",
-            "is_month_start",
-            "is_month_end",
-            "is_quarter_start",
-            "is_quarter_end",
             "days_since_last_change",
             "days_since_last_2_changes",
             "days_since_last_3_changes",
             "days_between_last_and_2nd_to_last_change",
             "days_until_next_change",
             "mean_change_frequency_all_previous",
-            # check if this really improves the prediction
             "mean_change_frequency_last_3",
         ]
 
