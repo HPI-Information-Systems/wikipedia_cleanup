@@ -12,7 +12,7 @@ from wikipedia_cleanup.predictor import CachedPredictor
 
 
 class RandomForestPredictor(CachedPredictor):
-    def __init__(self, use_cache: bool = True, threshold: float = 0.0, return_probs: bool = False) -> None:
+    def __init__(self, use_cache: bool = True, threshold: float = 0.0, return_probs: bool = False, min_number_changes: int = 0) -> None:
         super().__init__(use_cache)
         # contains for a given infobox_property_name (key) the regressor (value)
         self.classifiers: dict = {}
@@ -21,6 +21,7 @@ class RandomForestPredictor(CachedPredictor):
         self.last_preds: dict = {}
         self.threshold: float = threshold
         self.return_probs: bool = return_probs
+        self.min_number_changes: int = min_number_changes
 
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return []
@@ -95,6 +96,9 @@ class RandomForestPredictor(CachedPredictor):
     ) -> bool:
         if len(data_key) == 0:
             return False
+        if len(data_key) < self.min_number_changes:
+            return False
+        
         key_column_idx = columns.index("key")
         data_key_item = data_key[0, key_column_idx]
         if data_key_item not in self.classifiers:
