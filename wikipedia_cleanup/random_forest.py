@@ -12,7 +12,7 @@ from wikipedia_cleanup.predictor import CachedPredictor
 
 
 class RandomForestPredictor(CachedPredictor):
-    def __init__(self, use_cache: bool = True, threshold: float = 0.0) -> None:
+    def __init__(self, use_cache: bool = True, threshold: float = 0.0, return_probs: bool = False) -> None:
         super().__init__(use_cache)
         # contains for a given infobox_property_name (key) the regressor (value)
         self.classifiers: dict = {}
@@ -20,6 +20,7 @@ class RandomForestPredictor(CachedPredictor):
         # date is the date of the last change and pred the days until next change
         self.last_preds: dict = {}
         self.threshold: float = threshold
+        self.return_probs: bool = return_probs
 
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return []
@@ -103,8 +104,8 @@ class RandomForestPredictor(CachedPredictor):
 
         value_valid_from_column_idx = columns.index("value_valid_from")
         sample = data_key[-1, ...]
-        sample_value_valid_from = sample[value_valid_from_column_idx]
-        if self.last_preds[data_key_item][0] != sample_value_valid_from:
+        date_of_last_change = sample[value_valid_from_column_idx]
+        if self.last_preds[data_key_item][0] != date_of_last_change: #save timeframe in last_preds
             indices = [
                 columns.index(attr)
                 for attr in self.get_relevant_attributes()
@@ -113,19 +114,37 @@ class RandomForestPredictor(CachedPredictor):
             X_test = sample[indices].reshape(1, -1)
 
             clf = self.classifiers[data_key_item]
+            classes = clf.classes_
             pred_probs = clf.predict_proba(X_test)[0]
-            if pred_probs.max() >= self.threshold:
-                classes = self.classifiers[data_key_item].classes_
-                pred = int(classes[pred_probs.argmax()])
+            
+            if self.return_probs:
+                classes_indices = [i for i,c in enumerate(classes) if first_day_to_predict<= (date_of_last_change + timedelta(days=int(c)))< (first_day_to_predict + timedelta(days=timeframe))]
+                sum_of_probabilites = pred_probs[classes_indices].sum()
+                self.last_preds[data_key_item] = (date_of_last_change, pred_probs)
+                return sum_of_probabilites
             else:
-                pred = 9999
+                if pred_probs.max() >= self.threshold:
+                    pred = int(classes[pred_probs.argmax()])
+                else:
+                    pred = 9999
 
-            self.last_preds[data_key_item] = (sample_value_valid_from, pred)
+                self.last_preds[data_key_item] = (date_of_last_change, pred)
         else:
-            pred = self.last_preds[data_key_item][1]
+            if self.return_probs:
+                classes = self.classifiers[data_key_item].classes_
+                pred_probs = self.last_preds[data_key_item][1]
+                classes_indices = [i for i,c in enumerate(classes) if first_day_to_predict<= (date_of_last_change + timedelta(days=int(c)))< (first_day_to_predict + timedelta(days=timeframe))]
+                sum_of_probabilites = pred_probs[classes_indices].sum()
+            else:
+                pred = self.last_preds[data_key_item][1]
 
-        return (
-            first_day_to_predict
-            <= (sample_value_valid_from + timedelta(pred))
-            < first_day_to_predict + timedelta(timeframe)
-        )
+
+        if self.return_probs:
+            return sum_of_probabilites
+        else:
+            (first_day_to_predict
+            <= (date_of_last_change + timedelta(days=int(pred)))
+            < first_day_to_predict + timedelta(days=timeframe))
+                
+
+       

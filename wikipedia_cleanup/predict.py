@@ -241,7 +241,7 @@ class TrainAndPredictFramework:
             print("Starting evaluation.")
             start = time.time()
             predictions = [
-                np.array(prediction, dtype=np.bool) for prediction in predictions
+                np.array(prediction, dtype=np.float) for prediction in predictions
             ]
             all_day_labels = np.array(day_labels, dtype=np.bool)
             labels = [
@@ -250,8 +250,8 @@ class TrainAndPredictFramework:
             ]
 
             prediction_stats = []
-            for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
-                prediction_stats.append(create_prediction_output(y_true, y_hat, title))
+            #for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
+                #prediction_stats.append(create_prediction_output(y_true, y_hat, title))
             prediction_output = "\n\n".join(prediction_stats)
 
             self.run_results["labels"] = labels
