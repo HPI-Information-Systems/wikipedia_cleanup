@@ -26,15 +26,17 @@ from wikipedia_cleanup.utils import plot_directory, result_directory
 
 
 class TrainAndPredictFramework:
+    TEST_DURATION = 356
+
     TEST_SET_START_DATE = datetime(2018, 9, 1)
-    VALIDATION_SET_START_DATE = datetime(2017, 9, 1)
+    VALIDATION_SET_START_DATE = datetime(2018, 9, 1) - timedelta(days=TEST_DURATION)
 
     def __init__(
         self,
         predictor: Predictor,
         group_key: List[str],
         test_start_date: datetime = VALIDATION_SET_START_DATE,
-        test_duration: int = 365,
+        test_duration: int = TEST_DURATION,
         run_id: Optional[str] = None,
     ):
         self.test_start_date = test_start_date
