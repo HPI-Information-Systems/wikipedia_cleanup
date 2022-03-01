@@ -26,11 +26,14 @@ from wikipedia_cleanup.utils import plot_directory, result_directory
 
 
 class TrainAndPredictFramework:
+    TEST_SET_START_DATE = datetime(2018, 9, 1)
+    VALIDATION_SET_START_DATE = datetime(2017, 9, 1)
+
     def __init__(
         self,
         predictor: Predictor,
         group_key: List[str],
-        test_start_date: datetime = datetime(2018, 9, 1),
+        test_start_date: datetime = VALIDATION_SET_START_DATE,
         test_duration: int = 365,
         run_id: Optional[str] = None,
     ):
