@@ -29,7 +29,7 @@ class TrainAndPredictFramework:
     TEST_DURATION = 356
 
     TEST_SET_START_DATE = datetime(2018, 9, 1)
-    VALIDATION_SET_START_DATE = datetime(2018, 9, 1) - timedelta(days=TEST_DURATION)
+    VALIDATION_SET_START_DATE = TEST_SET_START_DATE - timedelta(days=TEST_DURATION)
 
     def __init__(
         self,
