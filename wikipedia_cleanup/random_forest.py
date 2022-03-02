@@ -1,6 +1,6 @@
 import itertools
 import pickle
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any, List, Tuple
 
 import numpy as np
@@ -8,12 +8,13 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from tqdm.auto import tqdm
 
-from wikipedia_cleanup.predictor import CachedPredictor
+from wikipedia_cleanup.predictor import CachedPredictor, RegressionPredictor
 
 
-class RandomForestPredictor(CachedPredictor):
+class RandomForestPredictor(CachedPredictor, RegressionPredictor):
     def __init__(self, use_cache: bool = True) -> None:
-        super().__init__(use_cache)
+        CachedPredictor.__init__(self, use_cache)
+        RegressionPredictor.__init__(self)
         # contains for a given infobox_property_name (key) the regressor (value)
         self.regressors: dict = {}
         # contains for a given infobox_property_name (key) a (date,pred) tuple (value)
@@ -23,8 +24,7 @@ class RandomForestPredictor(CachedPredictor):
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return []
 
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
+    def get_relevant_attributes(self) -> List[str]:
         return [
             "value_valid_from",
             "day_of_year",  # values from feature engineering
@@ -89,42 +89,31 @@ class RandomForestPredictor(CachedPredictor):
             self.regressors[key] = reg
             self.last_preds[key] = (DUMMY_TIMESTAMP, 0)
 
-    def predict_timeframe(
-        self,
-        data_key: np.ndarray,
-        additional_data: np.ndarray,
-        columns: List[str],
-        first_day_to_predict: date,
-        timeframe: int,
-    ) -> bool:
-        if len(data_key) == 0:
-            return False
-        key_column_idx = columns.index("key")
-        data_key_item = data_key[0, key_column_idx]
-        if data_key_item not in self.regressors:
-            # checks if model has been trained for the key
-            # (it didn't if there was no train data)
-            return False
+    def _predict_next_change(
+        self, data_key: np.ndarray, columns: List[str]
+    ) -> datetime:
 
         value_valid_from_column_idx = columns.index("value_valid_from")
         sample = data_key[-1, ...]
         sample_value_valid_from = sample[value_valid_from_column_idx]
-        if self.last_preds[data_key_item][0] != sample_value_valid_from:
-            reg = self.regressors[data_key_item]
-            indices = [
-                columns.index(attr)
-                for attr in self.get_relevant_attributes()
-                if not (attr == "value_valid_from" or attr == "days_until_next_change")
-            ]
-            X_test = sample[indices].reshape(1, -1)
-            pred = int(reg.predict(X_test)[0])
-            self.last_preds[data_key_item] = (sample_value_valid_from, pred)
+        key_column_idx = columns.index("key")
+        current_key = data_key[0, key_column_idx]
 
-        else:
-            pred = self.last_preds[data_key_item][1]
+        reg = self.regressors[current_key]
+        indices = [
+            columns.index(attr)
+            for attr in self.get_relevant_attributes()
+            if not (attr == "value_valid_from" or attr == "days_until_next_change")
+        ]
+        X_test = sample[indices].reshape(1, -1)
+        pred = int(reg.predict(X_test)[0])
+        return sample_value_valid_from + timedelta(pred)
 
-        return (
-            first_day_to_predict
-            <= (sample_value_valid_from + timedelta(pred))
-            < first_day_to_predict + timedelta(timeframe)
-        )
+    def _should_make_prediction(self, data_key: np.ndarray, columns: List[str]):
+        if len(data_key) == 0:
+            return False
+        key_column_idx = columns.index("key")
+        current_key = data_key[0, key_column_idx]
+        if current_key not in self.regressors:
+            return False
+        return True
