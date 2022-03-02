@@ -241,7 +241,7 @@ class TrainAndPredictFramework:
             print("Starting evaluation.")
             start = time.time()
             predictions = [
-                np.array(prediction, dtype=np.float) for prediction in predictions
+                np.array(prediction, dtype=np.bool) for prediction in predictions
             ] # change pred dtype to float for probabilities
             all_day_labels = np.array(day_labels, dtype=np.bool)
             labels = [
@@ -252,12 +252,12 @@ class TrainAndPredictFramework:
             prediction_stats = []
             pred_stats = []
             #needs to be commented out if working with probabilities as predictions
-            '''for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
+            for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
                 pred_stats.append({"prec_recall": evaluate_prediction(y_true, y_hat),
                                       "y_hat": y_hat,
                                       "y_true": y_true
                                     })
-                prediction_stats.append(create_prediction_output(y_true, y_hat, title))'''
+                prediction_stats.append(create_prediction_output(y_true, y_hat, title))
 
             prediction_output = "\n\n".join(prediction_stats)
             
