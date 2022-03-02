@@ -21,12 +21,14 @@ class PropertyCorrelationPredictor(CachedPredictor):
         max_allowed_properties: int = 53,
         percent_allowed_mismatch: float = 0.05,
         use_only_symmetric_links: bool = False,
+        do_not_use_links: bool = False,
         only_train_on_links: bool = False,
     ) -> None:
         super().__init__(use_cache)
         self.related_properties_lookup: dict = {}
         self.only_train_on_links = only_train_on_links
         self.use_only_symmetric_links = use_only_symmetric_links
+        self.do_not_use_links = do_not_use_links
 
         self.NUM_REQUIRED_CHANGES = num_required_changes
         self.MAX_ALLOWED_PROPERTIES = (
@@ -180,7 +182,10 @@ class PropertyCorrelationPredictor(CachedPredictor):
                 num_samples_from_links += len(related_row.bin_idx)
                 if num_samples_from_links > self.MAX_ALLOWED_PROPERTIES:
                     break
-            if num_samples_from_links <= self.MAX_ALLOWED_PROPERTIES:
+            if (
+                num_samples_from_links <= self.MAX_ALLOWED_PROPERTIES
+                and not self.do_not_use_links
+            ):
                 for related_row in related_items.itertuples():
                     row.bin_idx.extend(related_row.bin_idx)
                     row.selected_key.extend(related_row.selected_key)
