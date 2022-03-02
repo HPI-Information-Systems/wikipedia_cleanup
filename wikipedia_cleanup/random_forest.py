@@ -125,7 +125,6 @@ class RandomForestPredictor(CachedPredictor):
                 classes_indices = [i for i,c in enumerate(classes) if first_day_to_predict<= (date_of_last_change + timedelta(days=int(c)))< (first_day_to_predict + timedelta(days=timeframe))]
                 sum_of_probabilites = pred_probs[classes_indices].sum()
                 self.last_preds[data_key_item] = (date_of_last_change, pred_probs)
-                return sum_of_probabilites
             else:
                 if pred_probs.max() >= self.threshold:
                     pred = int(classes[pred_probs.argmax()])
@@ -142,11 +141,10 @@ class RandomForestPredictor(CachedPredictor):
             else:
                 pred = self.last_preds[data_key_item][1]
 
-
         if self.return_probs:
             return sum_of_probabilites
         else:
-            (first_day_to_predict
+            return (first_day_to_predict
             <= (date_of_last_change + timedelta(days=int(pred)))
             < first_day_to_predict + timedelta(days=timeframe))
                 

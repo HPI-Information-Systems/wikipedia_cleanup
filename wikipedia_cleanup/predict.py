@@ -154,8 +154,8 @@ class TrainAndPredictFramework:
             day_labels = [test_date in timestamps_set for test_date in test_dates]
             all_day_labels.append(day_labels)
         run_statistics = self._evaluate_predictions(predictions, all_day_labels)
+        self.run_results["keys"] = keys
         if run_statistics:
-            self.run_results["keys"] = keys
             output_folder = result_directory(self.run_id)
             output_folder.mkdir(parents=True, exist_ok=True)
             self._save_run_stats(output_folder, run_statistics)
@@ -242,7 +242,7 @@ class TrainAndPredictFramework:
             start = time.time()
             predictions = [
                 np.array(prediction, dtype=np.float) for prediction in predictions
-            ]
+            ] # change pred dtype to float for probabilities
             all_day_labels = np.array(day_labels, dtype=np.bool)
             labels = [
                 self._aggregate_labels(all_day_labels, timeframe)
@@ -252,12 +252,12 @@ class TrainAndPredictFramework:
             prediction_stats = []
             pred_stats = []
             #needs to be commented out if working with probabilities as predictions
-            for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
+            '''for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
                 pred_stats.append({"prec_recall": evaluate_prediction(y_true, y_hat),
                                       "y_hat": y_hat,
                                       "y_true": y_true
                                     })
-                prediction_stats.append(create_prediction_output(y_true, y_hat, title))
+                prediction_stats.append(create_prediction_output(y_true, y_hat, title))'''
 
             prediction_output = "\n\n".join(prediction_stats)
             
