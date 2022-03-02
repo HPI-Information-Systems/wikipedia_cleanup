@@ -20,9 +20,11 @@ class PropertyCorrelationPredictor(CachedPredictor):
         num_required_changes: int = 5,
         max_allowed_properties: int = 53,
         percent_allowed_mismatch: float = 0.05,
+        only_train_on_links: bool = False,
     ) -> None:
         super().__init__(use_cache)
         self.related_properties_lookup: dict = {}
+        self.only_train_on_links = only_train_on_links
 
         self.NUM_REQUIRED_CHANGES = num_required_changes
         self.MAX_ALLOWED_PROPERTIES = (
@@ -168,10 +170,9 @@ class PropertyCorrelationPredictor(CachedPredictor):
 
         matches = {}
         for row in tqdm(page_title_groups.itertuples(), total=len(page_title_groups)):
-            if len(row.bin_idx) == 0:
-                break
-
             related_items = page_title_groups.loc[page_to_related_pages[row.Index]]
+            if self.only_train_on_links and len(related_items) < 1:
+                continue
             num_samples_from_links = len(row.bin_idx)
             for related_row in related_items.itertuples():
                 num_samples_from_links += len(related_row.bin_idx)
