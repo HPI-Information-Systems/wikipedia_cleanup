@@ -12,7 +12,13 @@ from wikipedia_cleanup.predictor import CachedPredictor
 
 
 class RandomForestPredictor(CachedPredictor):
-    def __init__(self, use_cache: bool = True, threshold: float = 0.0, return_probs: bool = False, min_number_changes: int = 0) -> None:
+    def __init__(
+        self,
+        use_cache: bool = True,
+        threshold: float = 0.0,
+        return_probs: bool = False,
+        min_number_changes: int = 0,
+    ) -> None:
         super().__init__(use_cache)
         # contains for a given infobox_property_name (key) the regressor (value)
         self.classifiers: dict = {}
@@ -98,7 +104,7 @@ class RandomForestPredictor(CachedPredictor):
             return False
         if len(data_key) < self.min_number_changes:
             return False
-        
+
         key_column_idx = columns.index("key")
         data_key_item = data_key[0, key_column_idx]
         if data_key_item not in self.classifiers:
@@ -109,7 +115,9 @@ class RandomForestPredictor(CachedPredictor):
         value_valid_from_column_idx = columns.index("value_valid_from")
         sample = data_key[-1, ...]
         date_of_last_change = sample[value_valid_from_column_idx]
-        if self.last_preds[data_key_item][0] != date_of_last_change: #save timeframe in last_preds
+        if (
+            self.last_preds[data_key_item][0] != date_of_last_change
+        ):  # save timeframe in last_preds
             indices = [
                 columns.index(attr)
                 for attr in self.get_relevant_attributes()
@@ -120,9 +128,15 @@ class RandomForestPredictor(CachedPredictor):
             clf = self.classifiers[data_key_item]
             classes = clf.classes_
             pred_probs = clf.predict_proba(X_test)[0]
-            
+
             if self.return_probs:
-                classes_indices = [i for i,c in enumerate(classes) if first_day_to_predict<= (date_of_last_change + timedelta(days=int(c)))< (first_day_to_predict + timedelta(days=timeframe))]
+                classes_indices = [
+                    i
+                    for i, c in enumerate(classes)
+                    if first_day_to_predict
+                    <= (date_of_last_change + timedelta(days=int(c)))
+                    < (first_day_to_predict + timedelta(days=timeframe))
+                ]
                 sum_of_probabilites = pred_probs[classes_indices].sum()
                 self.last_preds[data_key_item] = (date_of_last_change, pred_probs)
             else:
@@ -136,7 +150,13 @@ class RandomForestPredictor(CachedPredictor):
             if self.return_probs:
                 classes = self.classifiers[data_key_item].classes_
                 pred_probs = self.last_preds[data_key_item][1]
-                classes_indices = [i for i,c in enumerate(classes) if first_day_to_predict<= (date_of_last_change + timedelta(days=int(c)))< (first_day_to_predict + timedelta(days=timeframe))]
+                classes_indices = [
+                    i
+                    for i, c in enumerate(classes)
+                    if first_day_to_predict
+                    <= (date_of_last_change + timedelta(days=int(c)))
+                    < (first_day_to_predict + timedelta(days=timeframe))
+                ]
                 sum_of_probabilites = pred_probs[classes_indices].sum()
             else:
                 pred = self.last_preds[data_key_item][1]
@@ -144,9 +164,8 @@ class RandomForestPredictor(CachedPredictor):
         if self.return_probs:
             return sum_of_probabilites
         else:
-            return (first_day_to_predict
-            <= (date_of_last_change + timedelta(days=int(pred)))
-            < first_day_to_predict + timedelta(days=timeframe))
-                
-
-       
+            return (
+                first_day_to_predict
+                <= (date_of_last_change + timedelta(days=int(pred)))
+                < first_day_to_predict + timedelta(days=timeframe)
+            )
