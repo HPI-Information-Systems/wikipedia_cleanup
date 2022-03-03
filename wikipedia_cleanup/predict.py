@@ -30,12 +30,17 @@ from wikipedia_cleanup.utils import plot_directory, result_directory
 
 
 class TrainAndPredictFramework:
+    TEST_DURATION = 356
+
+    TEST_SET_START_DATE = datetime(2018, 9, 1)
+    VALIDATION_SET_START_DATE = TEST_SET_START_DATE - timedelta(days=TEST_DURATION)
+
     def __init__(
         self,
         predictor: Predictor,
         group_key: List[str],
-        test_start_date: datetime = datetime(2018, 9, 1),
-        test_duration: int = 365,
+        test_start_date: datetime = VALIDATION_SET_START_DATE,
+        test_duration: int = TEST_DURATION,
         run_id: Optional[str] = None,
     ):
         self.test_start_date = test_start_date
@@ -105,7 +110,8 @@ class TrainAndPredictFramework:
         randomize: bool = False,
         predict_subset: float = 1.0,
         save_results: bool = False,
-    ) -> str:
+        generate_summary: bool = True,
+    ) -> Optional[str]:
         keys = self._initialize_keys(randomize, predict_subset)
         all_day_labels = []
 
@@ -157,14 +163,22 @@ class TrainAndPredictFramework:
             timestamps_set = set(timestamps)
             day_labels = [test_date in timestamps_set for test_date in test_dates]
             all_day_labels.append(day_labels)
-        run_statistics = self._evaluate_predictions(predictions, all_day_labels)
+        self._reformat_preds_and_labels(predictions, all_day_labels)
+        run_statistics = None
+        if np.any(day_labels):
+            if generate_summary:
+                run_statistics = self._evaluate_predictions()
+        else:
+            print("Results could not be generated. No changes in the test timeframe.")
         self.run_results["keys"] = keys
-        if run_statistics:
+
+        if run_statistics or save_results:
             output_folder = result_directory(self.run_id)
             output_folder.mkdir(parents=True, exist_ok=True)
+        if run_statistics:
             self._save_run_stats(output_folder, run_statistics)
-            if save_results:
-                self._save_run_results(output_folder)
+        if save_results:
+            self._save_run_results(output_folder)
         return run_statistics
 
     def generate_plots(self, run_results: Optional[dict] = None) -> None:
@@ -238,46 +252,51 @@ class TrainAndPredictFramework:
         return test_dates, test_dates_with_testing_timeframes
 
     def _evaluate_predictions(
-        self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
+        self, 
     ) -> str:
         prediction_output = ""
-        if np.any(day_labels):
-            print("Starting evaluation.")
-            start = time.time()
-            predictions = [
-                np.array(prediction, dtype=np.bool) for prediction in predictions
-            ]  # change pred dtype to float for probabilities
-            all_day_labels = np.array(day_labels, dtype=np.bool)
-            labels = [
-                self._aggregate_labels(all_day_labels, timeframe)
-                for timeframe in self.testing_timeframes
-            ]
-
-            prediction_stats = []
-            pred_stats = []
-            # needs to be commented out if working with probabilities as predictions
-            for y_true, y_hat, title in zip(labels, predictions, self.timeframe_labels):
-                pred_stats.append(
-                    {
-                        "prec_recall": evaluate_prediction(y_true, y_hat),
-                        "y_hat": y_hat,
-                        "y_true": y_true,
-                    }
-                )
-                prediction_stats.append(create_prediction_output(y_true, y_hat, title))
-
-            prediction_output = "\n\n".join(prediction_stats)
-
-            self.pred_stats = pred_stats
-            self.run_results["labels"] = labels
-            self.run_results["predictions"] = predictions
-            end = time.time()
-            print(
-                f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}"
+        print("Starting evaluation.")
+        start = time.time()
+        
+        prediction_stats = []
+        pred_stats = []
+        # needs to be commented out if working with probabilities as predictions
+        for y_true, y_hat, title in zip(self.run_results["labels"] , self.run_results["predictions"], self.timeframe_labels):
+            pred_stats.append(
+                {
+                    "prec_recall": evaluate_prediction(y_true, y_hat),
+                    "y_hat": y_hat,
+                    "y_true": y_true,
+                }
             )
-        else:
-            print("Results could not be generated. No changes in the test timeframe.")
+            prediction_stats.append(create_prediction_output(y_true, y_hat, title))
+
+        prediction_output = "\n\n".join(prediction_stats)
+
+        self.pred_stats = pred_stats
+        
+        end = time.time()
+        print(
+            f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}"
+        )
+        
         return prediction_output
+
+    def _reformat_preds_and_labels(
+        self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
+    ):
+        
+        start = time.time()
+        predictions = [
+            np.array(prediction) for prediction in predictions
+        ]  # change pred dtype to float for probabilities
+        all_day_labels = np.array(day_labels, dtype=np.bool)
+        labels = [
+            self._aggregate_labels(all_day_labels, timeframe)
+            for timeframe in self.testing_timeframes
+        ]
+        self.run_results["labels"] = labels
+        self.run_results["predictions"] = predictions
 
     @staticmethod
     def _get_data_until(

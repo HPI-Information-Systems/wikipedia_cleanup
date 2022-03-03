@@ -4,7 +4,7 @@ import random
 from abc import ABC, abstractmethod
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -19,8 +19,7 @@ class Predictor(ABC):
     ) -> None:
         raise NotImplementedError()
 
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
+    def get_relevant_attributes(self) -> List[str]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -48,8 +47,7 @@ class StaticPredictor(Predictor, ABC):
     def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
         return []
 
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
+    def get_relevant_attributes(self) -> List[str]:
         return []
 
 
@@ -92,7 +90,17 @@ class RandomPredictor(StaticPredictor):
         return random.random() <= self.p
 
 
-class MeanPredictor(ZeroPredictor):
+class RegressionPredictor(Predictor, ABC):
+    def __init__(self):
+        super().__init__()
+        self.last_known_key = None
+        self.last_known_timestamp = None
+        self.last_known_prediction = None
+
+    @staticmethod
+    def _is_in_timeframe(start: date, end: date, day: date) -> bool:
+        return start <= day < end
+
     def predict_timeframe(
         self,
         data_key: np.ndarray,
@@ -101,27 +109,38 @@ class MeanPredictor(ZeroPredictor):
         first_day_to_predict: date,
         timeframe: int,
     ) -> bool:
-        col_idx = columns.index("value_valid_from")
-        pred = self.next_change(data_key[:, col_idx])
-        if pred is None:
+        if not self._should_make_prediction(data_key, columns):
             return False
-        return (
-            first_day_to_predict <= pred <= first_day_to_predict + timedelta(timeframe)
+        key_column = columns.index("key")
+        value_valid_from_idx = columns.index("value_valid_from")
+        current_key = data_key[0, key_column]
+        if current_key == self.last_known_key:
+            if data_key[-1, value_valid_from_idx] == self.last_known_timestamp:
+                return self._is_in_timeframe(
+                    first_day_to_predict,
+                    first_day_to_predict + timedelta(timeframe),
+                    self.last_known_prediction,
+                )
+
+        pred = self._predict_next_change(data_key, columns)
+        self.last_known_key = current_key
+        self.last_known_timestamp = data_key[-1, value_valid_from_idx]
+        self.last_known_prediction = pred
+        return self._is_in_timeframe(
+            first_day_to_predict,
+            first_day_to_predict + timedelta(timeframe),
+            self.last_known_prediction,
         )
 
-    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
-        return [identifier]
+    @abstractmethod
+    def _predict_next_change(
+        self, data_key: np.ndarray, columns: List[str]
+    ) -> datetime:
+        pass
 
-    @staticmethod
-    def next_change(time_series: np.ndarray) -> Optional[date]:
-        if len(time_series) < 2:
-            return None
-
-        mean_time_to_change: np.timedelta64 = np.mean(
-            time_series[1:] - time_series[0:-1]
-        )
-        return_value: np.datetime64 = time_series[-1] + mean_time_to_change
-        return pd.to_datetime(return_value).date()
+    @abstractmethod
+    def _should_make_prediction(self, data_key: np.ndarray, columns: List[str]):
+        pass
 
 
 class CachedPredictor(Predictor):
@@ -194,3 +213,30 @@ class CachedPredictor(Predictor):
 
     def _adjust_cache(self) -> None:
         pass
+
+
+class MeanPredictor(StaticPredictor, RegressionPredictor):
+    def _predict_next_change(self, data: np.ndarray, columns: List[str]) -> datetime:
+        changes = data[:, columns.index("value_valid_from")]
+        mean_time_to_change: datetime = np.mean(
+            changes[1:] - changes[0:-1]
+        )  # type: ignore
+        return changes[-1] + mean_time_to_change
+
+    def _should_make_prediction(self, data_key: np.ndarray, columns: List[str]):
+        return len(data_key) >= 2
+
+    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
+        return [identifier]
+
+
+class LastChangePredictor(MeanPredictor):
+    def _predict_next_change(self, data: np.ndarray, columns: List[str]) -> datetime:
+        changes = data[:, columns.index("value_valid_from")]
+        return changes[-1] + (changes[-1] - changes[-2])
+
+    def _should_make_prediction(self, data_key: np.ndarray, columns: List[str]):
+        return len(data_key) >= 2
+
+    def get_relevant_ids(self, identifier: Tuple) -> List[Tuple]:
+        return [identifier]

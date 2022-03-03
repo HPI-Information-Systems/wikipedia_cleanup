@@ -120,7 +120,7 @@ class PropertyCorrelationPredictor(CachedPredictor):
     def _fit_classifier(
         self, train_data: pd.DataFrame, last_day: datetime, keys: List[str]
     ):
-        def percentage_manhatten_adaptive_time_lag(
+        def percentage_manhattan_adaptive_time_lag(
             arr1: csr_matrix, arr2: csr_matrix
         ) -> float:
             arr1 = arr1.toarray()
@@ -142,12 +142,12 @@ class PropertyCorrelationPredictor(CachedPredictor):
 
             return error / max_changes
 
-        def percentage_manhatten_adaptive_time_lag_symmetric(
+        def percentage_manhattan_adaptive_time_lag_symmetric(
             arr1: csr_matrix, arr2: csr_matrix
         ) -> float:
             return max(
-                percentage_manhatten_adaptive_time_lag(arr1, arr2),
-                percentage_manhatten_adaptive_time_lag(arr2, arr1),
+                percentage_manhattan_adaptive_time_lag(arr1, arr2),
+                percentage_manhattan_adaptive_time_lag(arr2, arr1),
             )
 
         related_page_index = self._get_links(train_data)
@@ -184,7 +184,7 @@ class PropertyCorrelationPredictor(CachedPredictor):
             input_data = vstack(row.bin_idx)
             neigh = NearestNeighbors(
                 radius=self.PERCENT_ALLOWED_MISMATCHES,
-                metric=percentage_manhatten_adaptive_time_lag_symmetric,
+                metric=percentage_manhattan_adaptive_time_lag_symmetric,
             )
             neigh.fit(input_data)
             neighbor_distances, neighbor_indices = neigh.radius_neighbors()
@@ -259,10 +259,9 @@ class PropertyCorrelationPredictor(CachedPredictor):
         if len(additional_data) == 0:
             return False
         col_idx = columns.index("value_valid_from")
-        return additional_data[-1:, col_idx] >= first_day_to_predict
+        return additional_data[-1, col_idx] >= first_day_to_predict
 
-    @staticmethod
-    def get_relevant_attributes() -> List[str]:
+    def get_relevant_attributes(self) -> List[str]:
         return [
             "page_id",
             "infobox_key",
