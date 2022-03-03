@@ -252,16 +252,20 @@ class TrainAndPredictFramework:
         return test_dates, test_dates_with_testing_timeframes
 
     def _evaluate_predictions(
-        self, 
+        self,
     ) -> str:
         prediction_output = ""
         print("Starting evaluation.")
         start = time.time()
-        
+
         prediction_stats = []
         pred_stats = []
         # needs to be commented out if working with probabilities as predictions
-        for y_true, y_hat, title in zip(self.run_results["labels"] , self.run_results["predictions"], self.timeframe_labels):
+        for y_true, y_hat, title in zip(
+            self.run_results["labels"],
+            self.run_results["predictions"],
+            self.timeframe_labels,
+        ):
             pred_stats.append(
                 {
                     "prec_recall": evaluate_prediction(y_true, y_hat),
@@ -274,19 +278,15 @@ class TrainAndPredictFramework:
         prediction_output = "\n\n".join(prediction_stats)
 
         self.pred_stats = pred_stats
-        
+
         end = time.time()
-        print(
-            f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}"
-        )
-        
+        print(f"Finished evaluation. Time elapsed: {timedelta(seconds=end - start)}")
+
         return prediction_output
 
     def _reformat_preds_and_labels(
         self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
     ):
-        
-        start = time.time()
         predictions = [
             np.array(prediction) for prediction in predictions
         ]  # change pred dtype to float for probabilities
