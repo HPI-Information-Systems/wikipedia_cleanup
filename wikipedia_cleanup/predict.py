@@ -287,9 +287,21 @@ class TrainAndPredictFramework:
     def _reformat_preds_and_labels(
         self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
     ):
-        predictions = [
-            np.array(prediction) for prediction in predictions
-        ]  # change pred dtype to float for probabilities
+
+        for pred in predictions:
+            print(type(pred))
+            if type(pred)==float:
+                print('found a float, converting to float')
+                predictions = [
+                    np.array(prediction, dtype=float) for prediction in predictions
+                ] 
+                break
+            elif type(pred)==bool:
+                print('found a bool, converting to bool')
+                predictions = [
+                    np.array(prediction, dtype=bool) for prediction in predictions
+                ]  
+                break
         all_day_labels = np.array(day_labels, dtype=np.bool)
         labels = [
             self._aggregate_labels(all_day_labels, timeframe)
