@@ -165,7 +165,7 @@ class TrainAndPredictFramework:
             all_day_labels.append(day_labels)
         self._reformat_preds_and_labels(predictions, all_day_labels)
         run_statistics = None
-        if np.any(day_labels):
+        if np.any(all_day_labels):
             if generate_summary:
                 run_statistics = self._evaluate_predictions()
         else:
@@ -288,7 +288,7 @@ class TrainAndPredictFramework:
         self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
     ):
 
-        for pred in predictions:
+        for pred in predictions[0][0]:
             print(type(pred))
             if type(pred)==float:
                 print('found a float, converting to float')

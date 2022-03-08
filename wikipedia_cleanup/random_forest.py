@@ -86,7 +86,7 @@ class RandomForestPredictor(CachedPredictor):
 
         for key in tqdm(keys):
             current_data = key_map[key]
-            if len(current_data) <= 1:
+            if len(current_data) < self.min_number_changes or len(current_data) < 2:
                 continue
             sample = current_data[:-1, :]
             X = sample[:, relevant_train_column_indexes]
