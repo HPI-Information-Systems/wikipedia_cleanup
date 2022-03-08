@@ -289,15 +289,15 @@ class TrainAndPredictFramework:
     ):
 
         for pred in predictions[0][0]:
-            if type(pred)==float:
+            if type(pred) == float:
                 predictions = [
                     np.array(prediction, dtype=float) for prediction in predictions
-                ] 
+                ]
                 break
-            elif type(pred)==bool:
+            elif type(pred) == bool:
                 predictions = [
                     np.array(prediction, dtype=bool) for prediction in predictions
-                ]  
+                ]
                 break
         all_day_labels = np.array(day_labels, dtype=np.bool)
         labels = [
