@@ -19,6 +19,7 @@ class RandomForestPredictor(CachedPredictor):
         min_number_changes: int = 230,
         cluster_classes: bool = False,
         return_probs: bool = False,
+        threshold_dict: dict = {},
     ) -> None:
         super().__init__(use_cache)
         # contains for a given infobox_property_name (key) the regressor (value)
@@ -31,6 +32,7 @@ class RandomForestPredictor(CachedPredictor):
         self.last_known_key: Optional[Tuple] = None
 
         self.threshold = threshold
+        self.threshold_dict = threshold_dict
         self.min_number_changes = min_number_changes
         self.return_probs = return_probs
         if return_probs:
@@ -123,16 +125,25 @@ class RandomForestPredictor(CachedPredictor):
         timeframe: int,
     ) -> Any:  # can be bool for actual predictions or float for confidence scores
         if len(data_key) == 0:
-            return False
+            if self.return_probs:
+                return 0.0
+            else:
+                return False
         if len(data_key) < self.min_number_changes:
-            return False
+            if self.return_probs:
+                return 0.0
+            else:
+                return False
 
         key_column_idx = columns.index("key")
         data_key_item = data_key[0, key_column_idx]
         if data_key_item not in self.classifiers:
             # checks if model has been trained for the key
             # (it didn't if there was no train data)
-            return False
+            if self.return_probs:
+                return 0.0
+            else:
+                return False
 
         value_valid_from_column_idx = columns.index("value_valid_from")
         sample = data_key[-1, ...]
@@ -190,7 +201,11 @@ class RandomForestPredictor(CachedPredictor):
         if self.return_probs:
             return sum_of_probabilites
         elif self.cluster_classes:
-            return sum_of_probabilites >= self.threshold
+            if len(self.threshold_dict) == 0:
+                return sum_of_probabilites >= self.threshold
+            else:
+                threshold = self.threshold_dict[data_key_item]
+                return sum_of_probabilites >= threshold
         else:
             return (
                 first_day_to_predict

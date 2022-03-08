@@ -289,15 +289,12 @@ class TrainAndPredictFramework:
     ):
 
         for pred in predictions[0][0]:
-            print(type(pred))
             if type(pred)==float:
-                print('found a float, converting to float')
                 predictions = [
                     np.array(prediction, dtype=float) for prediction in predictions
                 ] 
                 break
             elif type(pred)==bool:
-                print('found a bool, converting to bool')
                 predictions = [
                     np.array(prediction, dtype=bool) for prediction in predictions
                 ]  
