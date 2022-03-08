@@ -165,7 +165,7 @@ class TrainAndPredictFramework:
             all_day_labels.append(day_labels)
         self._reformat_preds_and_labels(predictions, all_day_labels)
         run_statistics = None
-        if np.any(day_labels):
+        if np.any(all_day_labels):
             if generate_summary:
                 run_statistics = self._evaluate_predictions()
         else:
@@ -287,9 +287,10 @@ class TrainAndPredictFramework:
     def _reformat_preds_and_labels(
         self, predictions: List[List[List[bool]]], day_labels: List[List[bool]]
     ):
-        predictions = [
-            np.array(prediction) for prediction in predictions
-        ]  # change pred dtype to float for probabilities
+        try:
+            predictions = [
+                np.array(prediction) for prediction in predictions
+            ]  # change pred dtype to float for probabilities
         all_day_labels = np.array(day_labels, dtype=np.bool)
         labels = [
             self._aggregate_labels(all_day_labels, timeframe)
