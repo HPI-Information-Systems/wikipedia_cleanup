@@ -30,7 +30,7 @@ from wikipedia_cleanup.utils import plot_directory, result_directory
 
 
 class TrainAndPredictFramework:
-    TEST_DURATION = 356
+    TEST_DURATION = 365
 
     TEST_SET_START_DATE = datetime(2018, 9, 1)
     VALIDATION_SET_START_DATE = TEST_SET_START_DATE - timedelta(days=TEST_DURATION)
@@ -237,7 +237,10 @@ class TrainAndPredictFramework:
         for days_evaluated, first_day_to_predict in enumerate(test_dates):
             curr_testing_timeframes = []
             for idx, timeframe in enumerate(self.testing_timeframes):
-                if days_evaluated % timeframe == 0:
+                if (
+                    days_evaluated % timeframe == 0
+                    and days_evaluated + timeframe <= self.test_duration
+                ):
                     prediction_end_date = first_day_to_predict + timedelta(
                         days=timeframe
                     )
@@ -382,11 +385,11 @@ class TrainAndPredictFramework:
         if n == 1:
             return labels
         if self.test_duration % n != 0:
-            padded_labels = np.pad(labels, ((0, 0), (0, (n - self.test_duration) % n)))
+            cut_labels = labels[:, : -(self.test_duration % n)]
         else:
-            padded_labels = labels
-        padded_labels = padded_labels.reshape((labels.shape[0], -1, n))
-        return np.any(padded_labels, axis=2)
+            cut_labels = labels
+        cut_labels = cut_labels.reshape((labels.shape[0], -1, n))
+        return np.any(cut_labels, axis=2)
 
     @staticmethod
     def _save_run_stats(output_folder: Path, run_statistics: str) -> None:
