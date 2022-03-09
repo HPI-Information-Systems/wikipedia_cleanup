@@ -150,7 +150,7 @@ class PropertyCorrelationPredictor(CachedPredictor):
                 percentage_manhattan_adaptive_time_lag(arr2, arr1),
             )
 
-        related_page_index = self._get_links(train_data)
+        # elated_page_index = self._get_links(train_data)
         min_support_groups = self._sparse_time_series_conversion(train_data, keys)
 
         page_title_groups = min_support_groups.reset_index()
@@ -161,17 +161,14 @@ class PropertyCorrelationPredictor(CachedPredictor):
             ["bin_idx", "selected_key"]
         ].agg(list)
 
-        links = self._find_working_links(min_support_groups, related_page_index)
-        page_to_related_pages = self._get_related_page_mapping(
-            links, related_page_index
-        )
+        # links = self._find_working_links(min_support_groups, related_page_index)
+        # page_to_related_pages = self._get_related_page_mapping(
+        #    links, related_page_index
+        # )
 
         matches = {}
         for row in tqdm(page_title_groups.itertuples(), total=len(page_title_groups)):
-            if len(row.bin_idx) == 0:
-                break
-
-            related_items = page_title_groups.loc[page_to_related_pages[row.Index]]
+            """related_items = page_title_groups.loc[page_to_related_pages[row.Index]]
             num_samples_from_links = len(row.bin_idx)
             for related_row in related_items.itertuples():
                 num_samples_from_links += len(related_row.bin_idx)
@@ -180,7 +177,7 @@ class PropertyCorrelationPredictor(CachedPredictor):
             if num_samples_from_links <= self.MAX_ALLOWED_PROPERTIES:
                 for related_row in related_items.itertuples():
                     row.bin_idx.extend(related_row.bin_idx)
-                    row.selected_key.extend(related_row.selected_key)
+                    row.selected_key.extend(related_row.selected_key)"""
             input_data = vstack(row.bin_idx)
             neigh = NearestNeighbors(
                 radius=self.PERCENT_ALLOWED_MISMATCHES,
