@@ -20,9 +20,15 @@ class PropertyCorrelationPredictor(CachedPredictor):
         num_required_changes: int = 5,
         max_allowed_properties: int = 53,
         percent_allowed_mismatch: float = 0.05,
+        use_only_symmetric_links: bool = False,
+        do_not_use_links: bool = False,
+        only_train_on_links: bool = False,
     ) -> None:
         super().__init__(use_cache)
         self.related_properties_lookup: dict = {}
+        self.only_train_on_links = only_train_on_links
+        self.use_only_symmetric_links = use_only_symmetric_links
+        self.do_not_use_links = do_not_use_links
 
         self.NUM_REQUIRED_CHANGES = num_required_changes
         self.MAX_ALLOWED_PROPERTIES = (
@@ -168,16 +174,18 @@ class PropertyCorrelationPredictor(CachedPredictor):
 
         matches = {}
         for row in tqdm(page_title_groups.itertuples(), total=len(page_title_groups)):
-            if len(row.bin_idx) == 0:
-                break
-
             related_items = page_title_groups.loc[page_to_related_pages[row.Index]]
+            if self.only_train_on_links and len(related_items) < 1:
+                continue
             num_samples_from_links = len(row.bin_idx)
             for related_row in related_items.itertuples():
                 num_samples_from_links += len(related_row.bin_idx)
                 if num_samples_from_links > self.MAX_ALLOWED_PROPERTIES:
                     break
-            if num_samples_from_links <= self.MAX_ALLOWED_PROPERTIES:
+            if (
+                num_samples_from_links <= self.MAX_ALLOWED_PROPERTIES
+                and not self.do_not_use_links
+            ):
                 for related_row in related_items.itertuples():
                     row.bin_idx.extend(related_row.bin_idx)
                     row.selected_key.extend(related_row.selected_key)
@@ -199,16 +207,18 @@ class PropertyCorrelationPredictor(CachedPredictor):
                     matches[row.selected_key[i]] = match
         self.related_properties_lookup = matches
 
-    @staticmethod
-    def _get_related_page_mapping(links, related_page_index):
+    def _get_related_page_mapping(self, links, related_page_index):
         page_to_related_pages = {}
         for page_title, related_pages in related_page_index.items():
             found_related_pages = []
             for related_page in related_pages:
                 if (
                     related_page in links
-                    and page_title in related_page_index[related_page]
                     and related_pages != page_title
+                    and (
+                        page_title in related_page_index[related_page]
+                        or not self.use_only_symmetric_links
+                    )
                 ):
                     found_related_pages.append(related_page)
             page_to_related_pages[page_title] = found_related_pages
