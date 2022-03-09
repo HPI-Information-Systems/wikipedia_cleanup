@@ -256,7 +256,8 @@ class PropertyCorrelationPredictor(CachedPredictor):
             super()._calculate_dependent_cache_name(data)
             + f"{self.NUM_REQUIRED_CHANGES},\n"
             f"{self.MAX_ALLOWED_PROPERTIES},\n"
-            f"{self.delay_range}"
+            f"{self.delay_range},\n"
+            f"{self.use_num_changes}"
         )
         return hash_string
 
